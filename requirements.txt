@@ -1,0 +1,5 @@
+streamlit
+webrtc_streamer
+WebRtcMode
+pandas
+numpy
