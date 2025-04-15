@@ -72,11 +72,13 @@ class FaceAuth:
     def recognize_face(self, frame):
         """Recognize faces in a frame"""
         # Convert to RGB (face_recognition uses RGB)
-        rgb_frame = frame[:, :, ::-1]
+        # Resize frame to 1/4 size for faster face recognition processing
+        small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
+        rgb_small_frame = small_frame[:, :, ::-1]
         
-        # Find all face locations and encodings
-        face_locations = face_recognition.face_locations(rgb_frame)
-        face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+        face_locations = face_recognition.face_locations(rgb_small_frame)
+        face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
+
         
         recognized_users = []
         
