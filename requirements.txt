@@ -1,8 +1,10 @@
 streamlit
-pandas
 streamlit-webrtc
-streamlit-autorefresh
-gTTS
+streamlit_autorefresh 
 opencv-python-headless
-sendgrid
-send_email
+gTTS
+moviepy
+Pillow
+numpy
+pandas
+email-validator
