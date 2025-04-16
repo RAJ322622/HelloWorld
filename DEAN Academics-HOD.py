@@ -165,7 +165,7 @@ class VideoProcessor(VideoTransformerBase):
 
 # UI Starts
 st.title("\U0001F393 Secure Quiz App with Webcam \U0001F4F5")
-menu = ["Register", "Login", "Take Quiz", "Change Password", "Professor Panel", "Professor Monitoring Panel",""Dean Academics and HOD","View Recorded Video"]
+menu = ["Register", "Login", "Take Quiz", "Change Password", "Professor Panel", "Professor Monitoring Panel","Dean Academics and HOD","View Recorded Video"]
 choice = st.sidebar.selectbox("Menu", menu)
 
 if choice == "Register":
