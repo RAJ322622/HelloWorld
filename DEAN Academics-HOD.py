@@ -676,13 +676,13 @@ elif choice == "Dean Academics and HOD":
         secret_key = st.text_input("Enter Dean/HOD Secret Key to continue", type="password")
         
         if st.button("Verify Key"):
-            if secret_key == "DEAN@123":  # You can change this secret key
+            if secret_key == "DEAN@123":
                 st.session_state.dean_verified = True
                 st.rerun()
             else:
                 st.error("Invalid secret key! Access denied.")
     else:
-        st_autorefresh(interval=10000, key="dean_refresh")
+        st_autorefresh(interval=5000, key="dean_refresh")  # Refresh every 5 seconds
         
         # Section selection
         sections = ["A", "B", "C"]  # Add more sections if needed
@@ -691,13 +691,19 @@ elif choice == "Dean Academics and HOD":
         # Section-wise dashboard
         st.markdown(f"### {selected_section} Section Monitoring")
         
-        # 1. Active Students - Improved section detection
+        # 1. Active Students - Fixed implementation
         st.markdown("#### Currently Active Students")
-        live_students = get_live_students()
         
-        # Get students in selected section
+        # Get active students from the JSON file
+        try:
+            with open(ACTIVE_FILE, "r") as f:
+                active_students = json.load(f)
+        except:
+            active_students = []
+        
+        # Filter students by section
         section_students = []
-        for student in live_students:
+        for student in active_students:
             # Check multiple possible formats for section in USN
             if "_" in student:  # Format: USN_Section
                 usn, section = student.rsplit("_", 1)
@@ -710,6 +716,10 @@ elif choice == "Dean Academics and HOD":
         
         if not section_students:
             st.info("No active students in this section currently.")
+            # Debug information
+            st.write("Debug Info:")
+            st.write(f"All active students: {active_students}")
+            st.write(f"Looking for section: {selected_section}")
         else:
             st.success(f"Active students in {selected_section} section ({len(section_students)}):")
             for student in section_students:
