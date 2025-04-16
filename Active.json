@@ -1,0 +1,6 @@
+import json
+ACTIVE_FILE = "active_students.json"
+os.makedirs(os.path.dirname(ACTIVE_FILE), exist_ok=True)
+if not os.path.exists(ACTIVE_FILE):
+    with open(ACTIVE_FILE, "w") as f:
+        json.dump([], f)
