@@ -691,26 +691,27 @@ elif choice == "Dean Academics and HOD":
         # Section-wise dashboard
         st.markdown(f"### {selected_section} Section Monitoring")
         
-        # 1. Active Students - Fixed to properly check section
+        # 1. Active Students - Improved section detection
         st.markdown("#### Currently Active Students")
         live_students = get_live_students()
         
-        # Get the section from the active students list
+        # Get students in selected section
         section_students = []
         for student in live_students:
-            # Assuming student USN format includes section (like "1RV20CS001_A")
-            if "_" in student:
-                usn, section = student.split("_")
+            # Check multiple possible formats for section in USN
+            if "_" in student:  # Format: USN_Section
+                usn, section = student.rsplit("_", 1)
                 if section.upper() == selected_section:
-                    section_students.append(student)
-            # Alternative check if using different format
-            elif student[-1].upper() == selected_section:
+                    section_students.append(usn)
+            elif student[-1].upper() == selected_section:  # Format: USNA
+                section_students.append(student[:-1])
+            elif len(student) > 3 and student[-3:-1].isdigit() and student[-1].upper() == selected_section:  # Format: 1RV20CS001A
                 section_students.append(student)
         
         if not section_students:
-            st.write("No active students in this section.")
+            st.info("No active students in this section currently.")
         else:
-            st.write(f"Active students ({len(section_students)}):")
+            st.success(f"Active students in {selected_section} section ({len(section_students)}):")
             for student in section_students:
                 st.write(f"- {student}")
         
@@ -720,34 +721,41 @@ elif choice == "Dean Academics and HOD":
         section_file = f"{selected_section}_results.csv"
         
         if os.path.exists(section_file):
-            df = pd.read_csv(section_file)
-            
-            # Statistics
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Total Students", len(df))
-            with col2:
-                avg_score = df['Score'].mean()
-                st.metric("Average Score", f"{avg_score:.1f}/{len(QUESTIONS)}")
-            with col3:
-                pass_rate = (len(df[df['Score'] >= len(QUESTIONS)/2]) / len(df)) * 100 if len(df) > 0 else 0
-                st.metric("Pass Rate", f"{pass_rate:.1f}%")
-            
-            # Detailed results
-            st.dataframe(df.sort_values("Score", ascending=False))
-            
-            # Download button
-            csv = df.to_csv(index=False)
-            st.download_button(
-                label=f"Download {selected_section} Results",
-                data=csv,
-                file_name=f"{selected_section}_quiz_results.csv",
-                mime="text/csv"
-            )
+            try:
+                df = pd.read_csv(section_file)
+                
+                # Calculate statistics
+                total_students = len(df)
+                avg_score = round(df['Score'].mean(), 1) if total_students > 0 else 0
+                passing_students = len(df[df['Score'] >= len(QUESTIONS)/2]) if total_students > 0 else 0
+                pass_rate = round((passing_students / total_students) * 100, 1) if total_students > 0 else 0
+                
+                # Display metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Students", total_students)
+                with col2:
+                    st.metric("Average Score", f"{avg_score}/{len(QUESTIONS)}")
+                with col3:
+                    st.metric("Pass Rate", f"{pass_rate}%")
+                
+                # Detailed results
+                st.dataframe(df.sort_values("Score", ascending=False))
+                
+                # Download button
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label=f"Download {selected_section} Results",
+                    data=csv,
+                    file_name=f"{selected_section}_quiz_results.csv",
+                    mime="text/csv"
+                )
+            except Exception as e:
+                st.error(f"Error loading results: {str(e)}")
         else:
             st.warning(f"No results available for {selected_section} section yet.")
         
-        # 3. All Sections Summary - Fixed Plotly error
+        # 3. All Sections Summary - Using Streamlit native charts
         st.markdown("---")
         st.markdown("### All Sections Summary")
         
@@ -755,40 +763,43 @@ elif choice == "Dean Academics and HOD":
         for sec in sections:
             sec_file = f"{sec}_results.csv"
             if os.path.exists(sec_file):
-                sec_df = pd.read_csv(sec_file)
-                sec_count = len(sec_df)
-                sec_avg = sec_df['Score'].mean()
-                sec_pass = (len(sec_df[sec_df['Score'] >= len(QUESTIONS)/2]) / sec_count) * 100 if sec_count > 0 else 0
-                all_sections_data.append({
-                    "Section": sec,
-                    "Students": sec_count,
-                    "Avg Score": sec_avg,
-                    "Pass Rate": sec_pass
-                })
+                try:
+                    sec_df = pd.read_csv(sec_file)
+                    sec_count = len(sec_df)
+                    sec_avg = round(sec_df['Score'].mean(), 1) if sec_count > 0 else 0
+                    sec_pass = round((len(sec_df[sec_df['Score'] >= len(QUESTIONS)/2]) / sec_count) * 100, 1) if sec_count > 0 else 0
+                    all_sections_data.append({
+                        "Section": sec,
+                        "Students": sec_count,
+                        "Avg Score": sec_avg,
+                        "Pass Rate": sec_pass
+                    })
+                except:
+                    continue
         
         if all_sections_data:
             summary_df = pd.DataFrame(all_sections_data)
+            
+            # Display summary table
             st.table(summary_df[["Section", "Students", "Avg Score", "Pass Rate"]])
             
-            # Visualization - Only if Plotly is installed
-            try:
-                import plotly.express as px
-                st.markdown("#### Performance Comparison")
-                
-                # Create a copy for visualization to avoid modifying original
-                viz_df = summary_df.copy()
-                viz_df["Pass Rate"] = viz_df["Pass Rate"].astype(float)
-                
-                fig = px.bar(viz_df, 
-                            x="Section", 
-                            y="Pass Rate",
-                            title="Pass Rate by Section",
-                            labels={"Pass Rate": "Pass Rate (%)"})
-                st.plotly_chart(fig)
-            except ImportError:
-                st.warning("Plotly not installed. Install with: pip install plotly")
-            except Exception as e:
-                st.warning(f"Could not create visualization: {str(e)}")
+            # Visualization using Streamlit native bar chart
+            st.markdown("#### Performance Comparison")
+            
+            # Create a bar chart using Streamlit's native chart
+            chart_data = summary_df[["Section", "Pass Rate"]].set_index("Section")
+            st.bar_chart(chart_data)
+            
+            # Additional metrics
+            st.markdown("##### Key Metrics Across Sections")
+            cols = st.columns(len(sections))
+            for idx, sec in enumerate(summary_df["Section"]):
+                with cols[idx]:
+                    st.metric(
+                        label=f"Section {sec}",
+                        value=f"{summary_df.loc[idx, 'Pass Rate']}% Pass",
+                        help=f"Avg Score: {summary_df.loc[idx, 'Avg Score']}/{len(QUESTIONS)}"
+                    )
         else:
             st.warning("No section data available yet.")
         
