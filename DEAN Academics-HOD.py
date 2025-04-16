@@ -123,25 +123,30 @@ def get_user_role(username):
     conn.close()
     return role[0] if role else "student"
 
-# Active student tracking
-def add_active_student(username):
+def add_active_student(username, section):
     try:
         with open(ACTIVE_FILE, "r") as f:
             data = json.load(f)
     except:
-        data = []
-    if username not in data:
-        data.append(username)
-        with open(ACTIVE_FILE, "w") as f:
-            json.dump(data, f)
+        data = {}
+    
+    # Store with username as key and section as value
+    data[username] = {
+        "section": section,
+        "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    
+    with open(ACTIVE_FILE, "w") as f:
+        json.dump(data, f)
 
 def remove_active_student(username):
     try:
         with open(ACTIVE_FILE, "r") as f:
             data = json.load(f)
-        data = [u for u in data if u != username]
-        with open(ACTIVE_FILE, "w") as f:
-            json.dump(data, f)
+        if username in data:
+            del data[username]
+            with open(ACTIVE_FILE, "w") as f:
+                json.dump(data, f)
     except:
         pass
 
@@ -150,7 +155,8 @@ def get_live_students():
         with open(ACTIVE_FILE, "r") as f:
             return json.load(f)
     except:
-        return []
+        return {}
+
 
 # Dummy question bank
 QUESTIONS = [
@@ -293,6 +299,7 @@ elif choice == "Login":
                     st.error("Passwords do not match. Please try again.")
             else:
                 st.error("Incorrect OTP. Please try again.")
+# Then update the Take Quiz section to properly track sections:
 elif choice == "Take Quiz":
     if not st.session_state.logged_in:
         st.warning("Please login first!")
@@ -331,7 +338,7 @@ elif choice == "Take Quiz":
                 answers = {}
 
                 if not st.session_state.quiz_submitted and not st.session_state.camera_active:
-                    add_active_student(username)
+                    add_active_student(username, st.session_state.section)  # Updated to include section
                     st.session_state.camera_active = True
 
                 if st.session_state.camera_active and not st.session_state.quiz_submitted:
@@ -668,6 +675,7 @@ elif choice == "Professor Monitoring Panel":
                 st.warning("No quiz submissions yet.")
 
 
+# Finally, update the Dean Academics and HOD section:
 elif choice == "Dean Academics and HOD":
     st.subheader("\U0001F468‍\U0001F393 Dean Academics & HOD Dashboard")
     
@@ -691,39 +699,22 @@ elif choice == "Dean Academics and HOD":
         # Section-wise dashboard
         st.markdown(f"### {selected_section} Section Monitoring")
         
-        # 1. Active Students - Fixed implementation
+        # 1. Active Students - Simplified implementation
         st.markdown("#### Currently Active Students")
         
-        # Get active students from the JSON file
-        try:
-            with open(ACTIVE_FILE, "r") as f:
-                active_students = json.load(f)
-        except:
-            active_students = []
-        
-        # Filter students by section
-        section_students = []
-        for student in active_students:
-            # Check multiple possible formats for section in USN
-            if "_" in student:  # Format: USN_Section
-                usn, section = student.rsplit("_", 1)
-                if section.upper() == selected_section:
-                    section_students.append(usn)
-            elif student[-1].upper() == selected_section:  # Format: USNA
-                section_students.append(student[:-1])
-            elif len(student) > 3 and student[-3:-1].isdigit() and student[-1].upper() == selected_section:  # Format: 1RV20CS001A
-                section_students.append(student)
+        active_students = get_live_students()
+        section_students = {
+            user: data for user, data in active_students.items() 
+            if data.get("section", "").upper() == selected_section
+        }
         
         if not section_students:
             st.info("No active students in this section currently.")
-            # Debug information
-            st.write("Debug Info:")
-            st.write(f"All active students: {active_students}")
-            st.write(f"Looking for section: {selected_section}")
         else:
             st.success(f"Active students in {selected_section} section ({len(section_students)}):")
-            for student in section_students:
-                st.write(f"- {student}")
+            for username, data in section_students.items():
+                time_elapsed = str(datetime.now() - datetime.strptime(data["start_time"], "%Y-%m-%d %H:%M:%S")).split(".")[0]
+                st.write(f"- {username} (Active for {time_elapsed})")
         
         # 2. Section Results
         st.markdown("---")
