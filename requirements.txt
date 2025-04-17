@@ -4,8 +4,10 @@ streamlit-autorefresh
 firebase-admin
 google-cloud-storage
 gtts
-opencv-python
+opencv-python-headless
 moviepy
 pandas
 numpy
 pytz
+imageio==2.9.0
+imageio-ffmpeg
