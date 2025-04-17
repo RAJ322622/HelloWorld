@@ -6,5 +6,3 @@ gtts==2.4.0
 ffmpeg-python==0.2.0
 Pillow==10.1.0
 streamlit-autorefresh==0.3.0
-libgl1
-libglib2.0-0
