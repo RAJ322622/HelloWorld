@@ -6,3 +6,4 @@ gtts
 ffmpeg-python
 Pillow
 streamlit-autorefresh
+streamlit_webrtc
