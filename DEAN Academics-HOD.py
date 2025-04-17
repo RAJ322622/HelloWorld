@@ -10,6 +10,8 @@ import random
 import base64
 from gtts import gTTS
 import tempfile
+import smtplib
+from email.message import EmailMessage
 
 # Configuration
 PROF_CSV_FILE = "prof_quiz_results.csv"
@@ -139,9 +141,9 @@ def autoplay_audio(file_path: str):
             """
         st.markdown(md, unsafe_allow_html=True)
 
-# UI Starts
+# Main App
 st.title("🎓 Secure Quiz App with Audio Questions 🎤")
-menu = ["Register", "Login", "Take Quiz", "Change Password", "Professor Panel", "Professor Monitoring Panel"]
+menu = ["Register", "Login", "Take Quiz", "Change Password", "Professor Panel"]
 choice = st.sidebar.selectbox("Menu", menu)
 
 if choice == "Register":
@@ -167,15 +169,6 @@ if choice == "Register":
             del st.session_state['reg_data']
         else:
             st.error("Incorrect OTP!")
-
-elif choice == "Login":
-    st.subheader("Login")
-
-    # Initialize login form fields in session state if they don't exist
-    if 'login_username' not in st.session_state:
-        st.session_state.login_username = ""
-    if 'login_password' not in st.session_state:
-        st.session_state.login_password = ""
 
     # ---------- Login Form ----------
     username = st.text_input("Username", value=st.session_state.login_username, key="login_username_widget")
@@ -349,6 +342,55 @@ elif choice == "Take Quiz":
                             prof_df = pd.concat([prof_df, new_row], ignore_index=True)
                         else:
                             prof_df = new_row
+                        prof_df.to_csv(PROF_CSV_FILE, index=False)
+
+                        section_file = f"{st.session_state.section}_results.csv"
+                        if os.path.exists(section_file):
+                            sec_df = pd.read_csv(section_file)
+                            sec_df = pd.concat([sec_df, new_row], ignore_index=True)
+                        else:
+                            sec_df = new_row
+                        sec_df.to_csv(section_file, index=False)
+
+                        if record:
+                            cur.execute("UPDATE quiz_attempts SET attempt_count = attempt_count + 1 WHERE username = ?", (username,))
+                        else:
+                            cur.execute("INSERT INTO quiz_attempts (username, attempt_count) VALUES (?, ?)", (username, 1))
+                        conn.commit()
+                        conn.close()
+
+                        st.success(f"Quiz submitted successfully! Your score is {score}/{len(QUESTIONS)}.")
+                        st.session_state.quiz_submitted = True
+
+elif choice == "Professor Panel":
+    st.subheader("Professor Access Panel")
+    
+    if 'prof_secret_verified' not in st.session_state:
+        secret_key = st.text_input("Enter Professor Secret Key to continue", type="password")
+        
+        if st.button("Verify Key"):
+            if secret_key == PROFESSOR_SECRET_KEY:
+                st.session_state.prof_secret_verified = True
+                st.rerun()
+            else:
+                st.error("Invalid secret key! Access denied.")
+    else:
+        st.success("Professor access granted!")
+        
+        # View results
+        if os.path.exists(PROF_CSV_FILE):
+            df = pd.read_csv(PROF_CSV_FILE)
+            st.dataframe(df)
+            
+            # Download option
+            st.download_button(
+                label="Download Results",
+                data=df.to_csv(index=False),
+                file_name="quiz_results.csv",
+                mime="text/csv"
+            )
+        else:
+            st.warning("No quiz results available yet.")
                         prof_df.to_csv(PROF_CSV_FILE, index=False)
 
                         section_file = f"{st.session_state.section}_results.csv"
