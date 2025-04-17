@@ -1,8 +1,13 @@
-streamlit
-pandas
-streamlit-webrtc
-streamlit-autorefresh
-gTTS
-opencv-python-headless
-sendgrid
-send_email
+streamlit==1.32.2
+sqlite3==2.6.0  # Note: sqlite3 is usually included in Python standard library
+hashlib==20081119  # Note: hashlib is usually included in Python standard library
+pandas==2.1.4
+python-dotenv==1.0.0
+streamlit-webrtc==0.47.3
+streamlit-autorefresh==0.3.1
+av==10.0.0
+smtplib==0.0.1  # Note: smtplib is usually included in Python standard library
+email-validator==2.0.0
+moviepy==1.0.3
+Pillow==10.1.0
+numpy==1.26.3
