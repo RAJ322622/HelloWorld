@@ -12,11 +12,6 @@ import av
 import smtplib
 from email.message import EmailMessage
 import random
-# Add these imports at the top of your file
-from gtts import gTTS
-from moviepy.editor import *
-import numpy as np
-from PIL import Image, ImageDraw, ImageFont
 
 def send_email_otp(to_email, otp):
     try:
@@ -42,9 +37,6 @@ STUDENT_CSV_FILE = "student_quiz_results.csv"
 ACTIVE_FILE = "active_students.json"
 RECORDING_DIR = "recordings"
 os.makedirs(RECORDING_DIR, exist_ok=True)
-# Add this configuration near your other configurations
-VIDEO_DIR = "generated_videos"
-os.makedirs(VIDEO_DIR, exist_ok=True)
 
 # Email configuration
 EMAIL_SENDER = "rajkumar.k0322@gmail.com"
@@ -160,67 +152,29 @@ def get_live_students():
     except:
         return []
 
-# Dummy question bank
 QUESTIONS = [
-    {"question": "What is the format specifier for an integer in C?", "options": ["%c", "%d", "%f", "%s"], "answer": "%d"},
-    {"question": "Which loop is used when the number of iterations is known?", "options": ["while", "do-while", "for", "if"], "answer": "for"},
+    {"question": "🔤 Which data type is used to store a single character in C? 🎯", "options": ["char", "int", "float", "double"], "answer": "char"},
+    {"question": "🔢 What is the output of 5 / 2 in C if both operands are integers? ⚡", "options": ["2.5", "2", "3", "Error"], "answer": "2"},
+    {"question": "🔁 Which loop is used when the number of iterations is known? 🔄", "options": ["while", "do-while", "for", "if"], "answer": "for"},
+    {"question": "📌 What is the format specifier for printing an integer in C? 🖨️", "options": ["%c", "%d", "%f", "%s"], "answer": "%d"},
+    {"question": "🚀 Which operator is used for incrementing a variable by 1 in C? ➕", "options": ["+", "++", "--", "="], "answer": "++"},
+    {"question": "📂 Which header file is required for input and output operations in C? 🖥️", "options": ["stdlib.h", "stdio.h", "string.h", "math.h"], "answer": "stdio.h"},
+    {"question": "🔄 What is the default return type of a function in C if not specified? 📌", "options": ["void", "int", "float", "char"], "answer": "int"},
+    {"question": "🎭 What is the output of printf(\"%d\", sizeof(int)); on a 32-bit system? 📏", "options": ["2", "4", "8", "16"], "answer": "4"},
+    {"question": "💡 What is the correct syntax for defining a pointer in C? 🎯", "options": ["int ptr;", "int* ptr;", "pointer int ptr;", "ptr int;"], "answer": "int* ptr;"},
+    {"question": "🔠 Which function is used to copy strings in C? 📋", "options": ["strcpy", "strcat", "strcmp", "strlen"], "answer": "strcpy"},
+    {"question": "📦 What is the keyword used to dynamically allocate memory in C? 🏗️", "options": ["malloc", "new", "alloc", "create"], "answer": "malloc"},
+    {"question": "🛑 Which statement is used to terminate a loop in C? 🔚", "options": ["break", "continue", "stop", "exit"], "answer": "break"},
+    {"question": "🧮 What will be the value of x after x = 10 % 3; ? ⚙️", "options": ["1", "2", "3", "0"], "answer": "1"},
+    {"question": "⚙️ Which operator is used to access the value stored at a memory address in C? 🎯", "options": ["&", "*", "->", "."], "answer": "*"},
+    {"question": "🔍 What does the 'sizeof' operator return in C? 📏", "options": ["The size of a variable", "The value of a variable", "The address of a variable", "The type of a variable"], "answer": "The size of a variable"},
 ]
+
 
 # Video processor
 class VideoProcessor(VideoTransformerBase):
     def recv(self, frame):
         return frame
-
-# Add these functions to your code
-def generate_audio(text, output_file):
-    tts = gTTS(text=text, lang='en')
-    tts.save(output_file)
-
-def create_video(question_text, output_file, audio_file):
-    # Create a simple image with the question text
-    width, height = 800, 600
-    img = Image.new('RGB', (width, height), color=(73, 109, 137))
-    draw = ImageDraw.Draw(img)
-    
-    try:
-        font = ImageFont.truetype("arial.ttf", 24)
-    except:
-        font = ImageFont.load_default()
-    
-    # Wrap text
-    lines = []
-    words = question_text.split()
-    current_line = []
-    max_width = width - 40
-    
-    for word in words:
-        test_line = ' '.join(current_line + [word])
-        test_width = draw.textlength(test_line, font=font)
-        if test_width <= max_width:
-            current_line.append(word)
-        else:
-            lines.append(' '.join(current_line))
-            current_line = [word]
-    if current_line:
-        lines.append(' '.join(current_line))
-    
-    # Draw text
-    y_text = 50
-    for line in lines:
-        draw.text((40, y_text), line, font=font, fill=(255, 255, 255))
-        y_text += 30
-    
-    # Convert to numpy array for moviepy
-    img_np = np.array(img)
-    
-    # Create video clip
-    audio_clip = AudioFileClip(audio_file)
-    img_clip = ImageClip(img_np).set_duration(audio_clip.duration)
-    video_clip = img_clip.set_audio(audio_clip)
-    video_clip.write_videofile(output_file, fps=24, codec='libx264')
-    
-    return output_file
-
 
 # UI Starts
 st.title("\U0001F393 Secure Quiz App with Webcam \U0001F4F5")
@@ -352,9 +306,6 @@ elif choice == "Login":
                     st.error("Passwords do not match. Please try again.")
             else:
                 st.error("Incorrect OTP. Please try again.")
-
-
-# Replace your current "Take Quiz" section with this updated version
 elif choice == "Take Quiz":
     if not st.session_state.logged_in:
         st.warning("Please login first!")
@@ -406,26 +357,8 @@ elif choice == "Take Quiz":
                     )
 
                 for idx, question in enumerate(QUESTIONS):
-                    question_text = question["question"]
-                    
-                    # Generate video for this question
-                    audio_file = os.path.join(VIDEO_DIR, f"q{idx}_audio.mp3")
-                    video_file = os.path.join(VIDEO_DIR, f"q{idx}_video.mp4")
-                    
-                    # Only generate if not already exists
-                    if not os.path.exists(video_file):
-                        generate_audio(question_text, audio_file)
-                        create_video(question_text, video_file, audio_file)
-                    
-                    # Display the video question
-                    st.markdown(f"**Question {idx+1}**")
-                    st.video(video_file)
-                    
-                    # Display options
-                    ans = st.radio("Select your answer:", 
-                                 question['options'], 
-                                 key=f"q{idx}", 
-                                 index=None)
+                    st.markdown(f"**Q{idx+1}:** {question['question']}")
+                    ans = st.radio("Select your answer:", question['options'], key=f"q{idx}", index=None)
                     answers[question['question']] = ans
 
                 submit_btn = st.button("Submit Quiz")
@@ -444,6 +377,7 @@ elif choice == "Take Quiz":
                                                columns=["Username", "Hashed_Password", "USN", "Section", "Score", "Time_Taken", "Timestamp"])
 
                         # Append to professor's CSV
+                                                # Append to professor's CSV
                         if os.path.exists(PROF_CSV_FILE):
                             prof_df = pd.read_csv(PROF_CSV_FILE)
                             prof_df = pd.concat([prof_df, new_row], ignore_index=True)
@@ -493,6 +427,40 @@ elif choice == "Take Quiz":
                         st.session_state.quiz_submitted = True
                         st.session_state.camera_active = False
                         remove_active_student(username)
+
+
+                        # Send result via email
+                        email_conn = get_db_connection()
+                        email_cur = email_conn.cursor()
+                        email_cur.execute("SELECT email FROM users WHERE username = ?", (username,))
+                        email_record = email_cur.fetchone()
+                        email_conn.close()
+
+                        if email_record and email_record[0]:
+                            try:
+                                result_msg = EmailMessage()
+                                result_msg.set_content(f"Hello {username},\n\nYou scored {score}/{len(QUESTIONS)} in the Secure Quiz.\n\nThank you!")
+                                result_msg['Subject'] = "Your Secure Quiz Result"
+                                result_msg['From'] = "rajkumar.k0322@gmail.com"
+                                result_msg['To'] = email_record[0]
+
+                                server = smtplib.SMTP('smtp.gmail.com', 587)
+                                server.starttls()
+                                server.login("rajkumar.k0322@gmail.com", "kcxf lzrq xnts xlng")  # App password
+                                server.send_message(result_msg)
+                                server.quit()
+
+                                st.success("Quiz result has been emailed to you.")
+                            except Exception as e:
+                                st.warning(f"Result email failed: {e}")
+
+                        # Cleanup session & camera
+                        st.success(f"✅ Quiz submitted successfully! You scored {score} out of {len(QUESTIONS)}.")
+                        st.session_state.quiz_submitted = True
+                        st.session_state.camera_active = False
+                        remove_active_student(username)
+
+
 
 elif choice == "Change Password":
     if not st.session_state.logged_in:
