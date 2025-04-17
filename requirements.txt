@@ -8,3 +8,7 @@ Pillow
 numpy
 pandas
 email-validator
+moviepy
+opencv-python
+gTTS
+pandas
