@@ -15,7 +15,9 @@ from email.message import EmailMessage
 import random
 from gtts import gTTS
 import cv2
-import moviepy.editor as mp
+from pydub import AudioSegment  # Replacement for moviepy
+from pydub.playback import play
+import subprocess  # For FFmpeg operations
 
 def send_email_otp(to_email, otp):
     try:
@@ -42,7 +44,7 @@ ACTIVE_FILE = "active_students.json"
 RECORDING_DIR = "recordings"
 os.makedirs(RECORDING_DIR, exist_ok=True)
 # Add these constants with your other configuration constants
-VIDEO_DIR = "/content/question_videos"
+VIDEO_DIR = "question_videos"
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
 # Email configuration
@@ -178,7 +180,6 @@ QUESTIONS = [
     {"question": "🔍 What does the 'sizeof' operator return in C? 📏", "options": ["The size of a variable", "The value of a variable", "The address of a variable", "The type of a variable"], "answer": "The size of a variable"},
 ]
 
-# Add these functions with your other utility functions
 def generate_audio(question_text, filename):
     """Generate audio file and save to the correct path"""
     try:
@@ -194,6 +195,7 @@ def generate_audio(question_text, filename):
         return False
 
 def create_video(question_text, filename, audio_file):
+    """Create video with text and audio using OpenCV and FFmpeg"""
     # Ensure the VIDEO_DIR exists
     os.makedirs(VIDEO_DIR, exist_ok=True)
     
@@ -203,8 +205,8 @@ def create_video(question_text, filename, audio_file):
     
     # Generate audio if it doesn't exist
     if not os.path.exists(audio_path):
-        tts = gTTS(text=question_text, lang='en')
-        tts.save(audio_path)
+        if not generate_audio(question_text, audio_path):
+            return None
     
     # Create video with OpenCV if it doesn't exist
     if not os.path.exists(video_path):
@@ -223,19 +225,34 @@ def create_video(question_text, filename, audio_file):
             out.write(img_copy)
         out.release()
     
-    # Combine with audio using moviepy
+    # Combine with audio using FFmpeg
     try:
-        video_clip = mp.VideoFileClip(video_path)
-        audio_clip = mp.AudioFileClip(audio_path)
-        final_video = video_clip.set_audio(audio_clip)
         final_path = video_path.replace('.mp4', '_final.mp4')
-        final_video.write_videofile(final_path, codec='libx264', fps=10, audio_codec='aac')
+        
+        # Use FFmpeg to combine video and audio
+        cmd = [
+            'ffmpeg',
+            '-y',  # Overwrite output file without asking
+            '-i', video_path,
+            '-i', audio_path,
+            '-c:v', 'copy',  # Copy video stream
+            '-c:a', 'aac',   # Encode audio with AAC
+            '-strict', 'experimental',
+            '-shortest',     # Finish encoding when the shortest input ends
+            final_path
+        ]
+        
+        # Run FFmpeg command
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
         return final_path
+    except subprocess.CalledProcessError as e:
+        st.error(f"FFmpeg error: {e.stderr.decode() if e.stderr else 'Unknown error'}")
+        return video_path  # Return video without audio if there's an error
     except Exception as e:
         st.error(f"Error creating video: {e}")
         return video_path  # Return video without audio if there's an error
 
-# Replace your existing VideoProcessor class with this one
 class VideoProcessor(VideoTransformerBase):
     def __init__(self):
         self.recording = True
@@ -434,27 +451,27 @@ elif choice == "Take Quiz":
                     )
 
                 for idx, question in enumerate(QUESTIONS):
-                  question_text = question["question"]
-                  
-                  # Create filenames with proper paths
-                  audio_filename = os.path.join(VIDEO_DIR, f"question_{idx}.mp3")
-                  video_filename = os.path.join(VIDEO_DIR, f"question_{idx}.mp4")
-                  
-                  # Generate content
-                  if not generate_audio(question_text, audio_filename):
-                      continue  # Skip if audio generation fails
-                      
-                  final_video_path = create_video(question_text, video_filename, audio_filename)
-                  
-                  if not os.path.exists(final_video_path):
-                      st.error(f"Failed to create video for question {idx+1}")
-                      continue
-                  
-                  # Display question
-                  st.video(final_video_path)
-                  st.markdown(f"**Q{idx+1}:** {question['question']}")
-                  ans = st.radio("Select your answer:", question['options'], key=f"q{idx}", index=None)
-                  answers[question['question']] = ans
+                    question_text = question["question"]
+                    
+                    # Create filenames with proper paths
+                    audio_filename = f"question_{idx}.mp3"
+                    video_filename = f"question_{idx}.mp4"
+                    
+                    # Generate content
+                    audio_path = os.path.join(VIDEO_DIR, audio_filename)
+                    video_path = os.path.join(VIDEO_DIR, video_filename)
+                    
+                    final_video_path = create_video(question_text, video_filename, audio_filename)
+                    
+                    if not final_video_path:
+                        st.error(f"Failed to create video for question {idx+1}")
+                        continue
+                    
+                    # Display question
+                    st.video(final_video_path)
+                    st.markdown(f"**Q{idx+1}:** {question['question']}")
+                    ans = st.radio("Select your answer:", question['options'], key=f"q{idx}", index=None)
+                    answers[question['question']] = ans
                 submit_btn = st.button("Submit Quiz")
                 auto_submit_triggered = st.session_state.get("auto_submit", False)
 
