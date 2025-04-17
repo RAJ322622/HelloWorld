@@ -171,10 +171,59 @@ QUESTIONS = [
 ]
 
 
-# Video processor
-class VideoProcessor(VideoTransformerBase):
+# Generate audio for questions
+def generate_audio(question_text, filename):
+    if not os.path.exists(filename):
+        tts = gTTS(text=question_text, lang='en')
+        tts.save(filename)
+
+# Create video for questions
+def create_video(question_text, filename, audio_file):
+    video_path = os.path.join(VIDEO_DIR, filename)
+    if os.path.exists(video_path):
+        return video_path
+
+    width, height = 640, 480
+    img = np.full((height, width, 3), (255, 223, 186), dtype=np.uint8)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(video_path, fourcc, 10, (width, height))
+
+    for _ in range(50):
+        img_copy = img.copy()
+        text_size = cv2.getTextSize(question_text, font, 1, 2)[0]
+        text_x = (width - text_size[0]) // 2
+        text_y = (height + text_size[1]) // 2
+        cv2.putText(img_copy, question_text, (text_x, text_y), font, 1, (0, 0, 255), 2, cv2.LINE_AA)
+        out.write(img_copy)
+
+    out.release()
+
+    video_clip = mp.VideoFileClip(video_path)
+    audio_clip = mp.AudioFileClip(audio_file)
+    final_video = video_clip.set_audio(audio_clip)
+    final_video.write_videofile(video_path, codec='libx264', fps=10, audio_codec='aac')
+
+    return video_path
+
+# Video Processor for Streamlit WebRTC
+class VideoProcessor(VideoProcessorBase):
+    def __init__(self):
+        self.recording = True
+        self.container = av.open(os.path.join(RECORDING_DIR, "quiz_recording.mp4"), mode="w")
+        self.stream = self.container.add_stream("h264")
+
     def recv(self, frame):
-        return frame
+        img = frame.to_ndarray(format="bgr24")
+        if self.recording:
+            packet = self.stream.encode(frame)
+            if packet:
+                self.container.mux(packet)
+        return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+    def close(self):
+        self.container.close()
 
 # UI Starts
 st.title("\U0001F393 Secure Quiz App with Webcam \U0001F4F5")
@@ -342,6 +391,26 @@ elif choice == "Take Quiz":
                     st.info(f"⏳ Time left: {mins:02d}:{secs:02d}")
 
                 answers = {}
+                # Start camera monitoring
+                st.subheader("📷 Live Camera Monitoring Enabled")
+                webrtc_streamer(
+                    key="camera",
+                    mode=WebRtcMode.SENDRECV,
+                    media_stream_constraints={"video": True, "audio": False},
+                    video_processor_factory=VideoProcessor,
+                )
+        
+                for idx, question in enumerate(QUESTIONS):
+                    question_text = question["question"]
+                    audio_file = os.path.join(VIDEO_DIR, f"question_{idx}.mp3")
+                    video_file = os.path.join(VIDEO_DIR, f"question_{idx}.mp4")
+
+                    generate_audio(question_text, audio_file)
+                    video_file = create_video(question_text, video_file, audio_file)
+        
+                    st.video(video_file)
+                    selected_option = st.radio(f"Select your answer for Question {idx+1}", question["options"], key=f"q{idx}")
+                    answers[question_text] = selected_option
 
                 if not st.session_state.quiz_submitted and not st.session_state.camera_active:
                     add_active_student(username)
