@@ -3,49 +3,25 @@ import sqlite3
 import hashlib
 import time
 import pandas as pd
-import numpy as np
 import os
 import json
 from datetime import datetime
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase
-from streamlit_autorefresh import st_autorefresh
-import av
-import smtplib
-from email.message import EmailMessage
 import random
-from gtts import gTTS
 import cv2
-from pydub import AudioSegment  # Replacement for moviepy
-from pydub.playback import play
-import subprocess  # For FFmpeg operations
-
-def send_email_otp(to_email, otp):
-    try:
-        msg = EmailMessage()
-        msg.set_content(f"Your OTP for Secure Quiz App is: {otp}")
-        msg['Subject'] = "Email Verification OTP - Secure Quiz App"
-        msg['From'] = "rajkumar.k0322@gmail.com"
-        msg['To'] = to_email
-
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login("rajkumar.k0322@gmail.com", "kcxf lzrq xnts xlng")  # App Password
-        server.send_message(msg)
-        server.quit()
-        return True
-    except Exception as e:
-        st.error(f"Failed to send OTP: {e}")
-        return False
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+from pydub import AudioSegment
+import subprocess
+from gtts import gTTS
 
 # Configuration
 PROF_CSV_FILE = "prof_quiz_results.csv"
 STUDENT_CSV_FILE = "student_quiz_results.csv"
 ACTIVE_FILE = "active_students.json"
 RECORDING_DIR = "recordings"
+QUESTION_VIDEO_DIR = "question_videos"
 os.makedirs(RECORDING_DIR, exist_ok=True)
-# Add these constants with your other configuration constants
-VIDEO_DIR = "question_videos"
-os.makedirs(VIDEO_DIR, exist_ok=True)
+os.makedirs(QUESTION_VIDEO_DIR, exist_ok=True)
 
 # Email configuration
 EMAIL_SENDER = "rajkumar.k0322@gmail.com"
@@ -76,32 +52,31 @@ if 'section' not in st.session_state:
 if 'prof_dir' not in st.session_state:
     st.session_state.prof_dir = "professor_data"
 
+# Dummy question bank
+QUESTIONS = [
+    {"question": "What is the format specifier for an integer in C?", "options": ["%c", "%d", "%f", "%s"], "answer": "%d"},
+    {"question": "Which loop is used when the number of iterations is known?", "options": ["while", "do-while", "for", "if"], "answer": "for"},
+]
+
 def get_db_connection():
     conn = sqlite3.connect('quiz_app.db')
-
-    # Create 'users' table if it doesn't exist
     conn.execute('''CREATE TABLE IF NOT EXISTS users (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        username TEXT UNIQUE,
-                        password TEXT,
-                        role TEXT DEFAULT 'student',
-                        email TEXT)''')
-
-    # Create other tables
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE,
+                    password TEXT,
+                    role TEXT DEFAULT 'student',
+                    email TEXT)''')
     conn.execute('''CREATE TABLE IF NOT EXISTS password_changes (
-                        username TEXT PRIMARY KEY,
-                        change_count INTEGER DEFAULT 0)''')
+                    username TEXT PRIMARY KEY,
+                    change_count INTEGER DEFAULT 0)''')
     conn.execute('''CREATE TABLE IF NOT EXISTS quiz_attempts (
-                        username TEXT PRIMARY KEY,
-                        attempt_count INTEGER DEFAULT 0)''')
-
+                    username TEXT PRIMARY KEY,
+                    attempt_count INTEGER DEFAULT 0)''')
     return conn
 
-# Password hashing
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# Register user
 def register_user(username, password, role, email):
     conn = get_db_connection()
     try:
@@ -114,17 +89,13 @@ def register_user(username, password, role, email):
     finally:
         conn.close()
 
-# Authenticate user
 def authenticate_user(username, password):
     conn = get_db_connection()
     cursor = conn.execute("SELECT password FROM users WHERE username = ?", (username,))
     user = cursor.fetchone()
     conn.close()
-    if user:
-        return user[0] == hash_password(password)
-    return False
+    return user and user[0] == hash_password(password)
 
-# Get user role
 def get_user_role(username):
     conn = get_db_connection()
     cursor = conn.execute("SELECT role FROM users WHERE username = ?", (username,))
@@ -132,68 +103,54 @@ def get_user_role(username):
     conn.close()
     return role[0] if role else "student"
 
-# Active student tracking
-def add_active_student(username):
-    try:
-        with open(ACTIVE_FILE, "r") as f:
-            data = json.load(f)
-    except:
-        data = []
-    if username not in data:
-        data.append(username)
-        with open(ACTIVE_FILE, "w") as f:
-            json.dump(data, f)
-
-def remove_active_student(username):
-    try:
-        with open(ACTIVE_FILE, "r") as f:
-            data = json.load(f)
-        data = [u for u in data if u != username]
-        with open(ACTIVE_FILE, "w") as f:
-            json.dump(data, f)
-    except:
-        pass
-
-def get_live_students():
-    try:
-        with open(ACTIVE_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return []
-
-# Replace your existing QUESTIONS list with this new one
-QUESTIONS = [
-    {"question": "🔤 Which data type is used to store a single character in C? 🎯", "options": ["char", "int", "float", "double"], "answer": "char"},
-    {"question": "🔢 What is the output of 5 / 2 in C if both operands are integers? ⚡", "options": ["2.5", "2", "3", "Error"], "answer": "2"},
-    {"question": "🔁 Which loop is used when the number of iterations is known? 🔄", "options": ["while", "do-while", "for", "if"], "answer": "for"},
-    {"question": "📌 What is the format specifier for printing an integer in C? 🖨️", "options": ["%c", "%d", "%f", "%s"], "answer": "%d"},
-    {"question": "🚀 Which operator is used for incrementing a variable by 1 in C? ➕", "options": ["+", "++", "--", "="], "answer": "++"},
-    {"question": "📂 Which header file is required for input and output operations in C? 🖥️", "options": ["stdlib.h", "stdio.h", "string.h", "math.h"], "answer": "stdio.h"},
-    {"question": "🔄 What is the default return type of a function in C if not specified? 📌", "options": ["void", "int", "float", "char"], "answer": "int"},
-    {"question": "🎭 What is the output of printf(\"%d\", sizeof(int)); on a 32-bit system? 📏", "options": ["2", "4", "8", "16"], "answer": "4"},
-    {"question": "💡 What is the correct syntax for defining a pointer in C? 🎯", "options": ["int ptr;", "int* ptr;", "pointer int ptr;", "ptr int;"], "answer": "int* ptr;"},
-    {"question": "🔠 Which function is used to copy strings in C? 📋", "options": ["strcpy", "strcat", "strcmp", "strlen"], "answer": "strcpy"},
-    {"question": "📦 What is the keyword used to dynamically allocate memory in C? �️", "options": ["malloc", "new", "alloc", "create"], "answer": "malloc"},
-    {"question": "🛑 Which statement is used to terminate a loop in C? 🔚", "options": ["break", "continue", "stop", "exit"], "answer": "break"},
-    {"question": "🧮 What will be the value of x after x = 10 % 3; ? ⚙️", "options": ["1", "2", "3", "0"], "answer": "1"},
-    {"question": "⚙️ Which operator is used to access the value stored at a memory address in C? 🎯", "options": ["&", "*", "->", "."], "answer": "*"},
-    {"question": "🔍 What does the 'sizeof' operator return in C? 📏", "options": ["The size of a variable", "The value of a variable", "The address of a variable", "The type of a variable"], "answer": "The size of a variable"},
-]
-
-def generate_audio(question_text, filename):
-    """Generate audio file and save to the correct path"""
-    try:
-        # Ensure the directory exists
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
+def create_question_video(question_data, idx):
+    """Create a video for a single question with options using OpenCV"""
+    video_path = os.path.join(QUESTION_VIDEO_DIR, f"q{idx}.mp4")
+    
+    if os.path.exists(video_path):
+        return video_path
+    
+    # Video parameters
+    width, height = 800, 600
+    fps = 1  # Low FPS since it's just text
+    duration = 5  # seconds
+    frame_count = fps * duration
+    
+    # Create video writer
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
+    
+    # Create blank image with text
+    for _ in range(frame_count):
+        img = np.zeros((height, width, 3), dtype=np.uint8)
+        img.fill(73)  # Fill with background color
         
-        # Generate and save audio
-        tts = gTTS(text=question_text, lang='en')
-        tts.save(filename)
-        return True
-    except Exception as e:
-        st.error(f"Error generating audio: {e}")
-        return False
+        # Add text to image
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(img, f"Question {idx+1}: {question_data['question']}", 
+                   (50, 50), font, 0.7, (255, 255, 255), 2)
+        
+        # Add options
+        y_offset = 150
+        for i, option in enumerate(question_data['options']):
+            cv2.putText(img, f"{chr(65+i)}. {option}", 
+                       (100, y_offset), font, 0.7, (255, 255, 255), 2)
+            y_offset += 50
+        
+        out.write(img)
+    
+    out.release()
+    
+    return video_path
 
+def generate_all_question_videos(questions):
+    """Generate videos for all questions"""
+    video_paths = []
+    for idx, question in enumerate(questions):
+        video_path = create_question_video(question, idx)
+        video_paths.append(video_path)
+    return video_paths
+question_videos = generate_all_question_videos(QUESTIONS)
 def create_video(question_text, filename, audio_file):
     """Create video with text and audio using OpenCV and FFmpeg"""
     # Ensure the VIDEO_DIR exists
@@ -437,40 +394,14 @@ elif choice == "Take Quiz":
 
                 answers = {}
 
-                if not st.session_state.quiz_submitted and not st.session_state.camera_active:
-                    add_active_student(username)
-                    st.session_state.camera_active = True
-
-                if st.session_state.camera_active and not st.session_state.quiz_submitted:
-                    st.markdown("<span style='color:red;'>\U0001F7E2 Webcam is ON</span>", unsafe_allow_html=True)
-                    webrtc_streamer(
-                        key="camera",
-                        mode=WebRtcMode.SENDRECV,
-                        media_stream_constraints={"video": True, "audio": False},
-                        video_processor_factory=VideoProcessor,
-                    )
-
+                # Display video questions
                 for idx, question in enumerate(QUESTIONS):
-                    question_text = question["question"]
-                    
-                    # Create filenames with proper paths
-                    audio_filename = f"question_{idx}.mp3"
-                    video_filename = f"question_{idx}.mp4"
-                    
-                    # Generate content
-                    audio_path = os.path.join(VIDEO_DIR, audio_filename)
-                    video_path = os.path.join(VIDEO_DIR, video_filename)
-                    
-                    final_video_path = create_video(question_text, video_filename, audio_filename)
-                    
-                    if not final_video_path:
-                        st.error(f"Failed to create video for question {idx+1}")
-                        continue
-                    
-                    # Display question
-                    st.video(final_video_path)
-                    st.markdown(f"**Q{idx+1}:** {question['question']}")
-                    ans = st.radio("Select your answer:", question['options'], key=f"q{idx}", index=None)
+                    video_file = question_videos[idx]
+                    st.video(video_file)
+                    ans = st.radio(f"Select your answer for Q{idx+1}:", 
+                                 question['options'], 
+                                 key=f"q{idx}", 
+                                 index=None)
                     answers[question['question']] = ans
                 submit_btn = st.button("Submit Quiz")
                 auto_submit_triggered = st.session_state.get("auto_submit", False)
