@@ -8,3 +8,6 @@ email-validator==2.0.0
 moviepy==1.0.3
 Pillow==10.1.0
 numpy==1.26.3
+gTTS==2.4.0
+opencv-python==4.9.0.80
+moviepy==1.0.3
