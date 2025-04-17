@@ -12,3 +12,4 @@ moviepy
 opencv-python
 gTTS
 pandas
+cv2
