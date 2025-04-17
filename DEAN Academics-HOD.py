@@ -3,6 +3,7 @@ import sqlite3
 import hashlib
 import time
 import pandas as pd
+import numpy as np
 import os
 import json
 from datetime import datetime
@@ -41,7 +42,7 @@ ACTIVE_FILE = "active_students.json"
 RECORDING_DIR = "recordings"
 os.makedirs(RECORDING_DIR, exist_ok=True)
 # Add these constants with your other configuration constants
-VIDEO_DIR = "question_videos"
+VIDEO_DIR = "/content/question_videos"
 os.makedirs(VIDEO_DIR, exist_ok=True)
 
 # Email configuration
@@ -179,38 +180,60 @@ QUESTIONS = [
 
 # Add these functions with your other utility functions
 def generate_audio(question_text, filename):
-    if not os.path.exists(filename):
+    """Generate audio file and save to the correct path"""
+    try:
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        
+        # Generate and save audio
         tts = gTTS(text=question_text, lang='en')
         tts.save(filename)
+        return True
+    except Exception as e:
+        st.error(f"Error generating audio: {e}")
+        return False
 
 def create_video(question_text, filename, audio_file):
+    # Ensure the VIDEO_DIR exists
+    os.makedirs(VIDEO_DIR, exist_ok=True)
+    
+    # Create full paths
     video_path = os.path.join(VIDEO_DIR, filename)
-    if os.path.exists(video_path):
-        return video_path
-
-    width, height = 640, 480
-    img = np.full((height, width, 3), (255, 223, 186), dtype=np.uint8)
-    font = cv2.FONT_HERSHEY_SIMPLEX
-
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(video_path, fourcc, 10, (width, height))
-
-    for _ in range(50):
-        img_copy = img.copy()
-        text_size = cv2.getTextSize(question_text, font, 1, 2)[0]
-        text_x = (width - text_size[0]) // 2
-        text_y = (height + text_size[1]) // 2
-        cv2.putText(img_copy, question_text, (text_x, text_y), font, 1, (0, 0, 255), 2, cv2.LINE_AA)
-        out.write(img_copy)
-
-    out.release()
-
-    video_clip = mp.VideoFileClip(video_path)
-    audio_clip = mp.AudioFileClip(audio_file)
-    final_video = video_clip.set_audio(audio_clip)
-    final_video.write_videofile(video_path, codec='libx264', fps=10, audio_codec='aac')
-
-    return video_path
+    audio_path = os.path.join(VIDEO_DIR, audio_file)
+    
+    # Generate audio if it doesn't exist
+    if not os.path.exists(audio_path):
+        tts = gTTS(text=question_text, lang='en')
+        tts.save(audio_path)
+    
+    # Create video with OpenCV if it doesn't exist
+    if not os.path.exists(video_path):
+        width, height = 640, 480
+        img = np.full((height, width, 3), (255, 223, 186), dtype=np.uint8)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(video_path, fourcc, 10, (width, height))
+        
+        for _ in range(50):  # 5 seconds of video at 10fps
+            img_copy = img.copy()
+            text_size = cv2.getTextSize(question_text, font, 1, 2)[0]
+            text_x = (width - text_size[0]) // 2
+            text_y = (height + text_size[1]) // 2
+            cv2.putText(img_copy, question_text, (text_x, text_y), font, 1, (0, 0, 255), 2, cv2.LINE_AA)
+            out.write(img_copy)
+        out.release()
+    
+    # Combine with audio using moviepy
+    try:
+        video_clip = mp.VideoFileClip(video_path)
+        audio_clip = mp.AudioFileClip(audio_path)
+        final_video = video_clip.set_audio(audio_clip)
+        final_path = video_path.replace('.mp4', '_final.mp4')
+        final_video.write_videofile(final_path, codec='libx264', fps=10, audio_codec='aac')
+        return final_path
+    except Exception as e:
+        st.error(f"Error creating video: {e}")
+        return video_path  # Return video without audio if there's an error
 
 # Replace your existing VideoProcessor class with this one
 class VideoProcessor(VideoTransformerBase):
@@ -411,18 +434,27 @@ elif choice == "Take Quiz":
                     )
 
                 for idx, question in enumerate(QUESTIONS):
-                    question_text = question["question"]
-                    audio_file = os.path.join(VIDEO_DIR, f"question_{idx}.mp3")
-                    video_file = os.path.join(VIDEO_DIR, f"question_{idx}.mp4")
-
-                    generate_audio(question_text, audio_file)
-                    video_file = create_video(question_text, video_file, audio_file)
-
-                    st.video(video_file)
-                    st.markdown(f"**Q{idx+1}:** {question['question']}")
-                    ans = st.radio("Select your answer:", question['options'], key=f"q{idx}", index=None)
-                    answers[question['question']] = ans
-
+                  question_text = question["question"]
+                  
+                  # Create filenames with proper paths
+                  audio_filename = os.path.join(VIDEO_DIR, f"question_{idx}.mp3")
+                  video_filename = os.path.join(VIDEO_DIR, f"question_{idx}.mp4")
+                  
+                  # Generate content
+                  if not generate_audio(question_text, audio_filename):
+                      continue  # Skip if audio generation fails
+                      
+                  final_video_path = create_video(question_text, video_filename, audio_filename)
+                  
+                  if not os.path.exists(final_video_path):
+                      st.error(f"Failed to create video for question {idx+1}")
+                      continue
+                  
+                  # Display question
+                  st.video(final_video_path)
+                  st.markdown(f"**Q{idx+1}:** {question['question']}")
+                  ans = st.radio("Select your answer:", question['options'], key=f"q{idx}", index=None)
+                  answers[question['question']] = ans
                 submit_btn = st.button("Submit Quiz")
                 auto_submit_triggered = st.session_state.get("auto_submit", False)
 
