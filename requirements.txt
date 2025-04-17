@@ -2,7 +2,9 @@ streamlit==1.32.2
 numpy==1.26.3
 opencv-python-headless==4.9.0.80
 moviepy==1.0.3
+imageio==2.31.6
+numpy==1.26.3
+Pillow==10.1.0
 gtts==2.4.0
 ffmpeg-python==0.2.0
-Pillow==10.1.0
 streamlit-autorefresh==0.3.0
