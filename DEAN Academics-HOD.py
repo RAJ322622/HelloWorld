@@ -1,33 +1,56 @@
 import streamlit as st
-import sqlite3
 import hashlib
 import time
 import pandas as pd
+import numpy as np
 import os
 import json
 from datetime import datetime
-import random
-import base64
-from gtts import gTTS
-import tempfile
+from pytz import timezone
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase
+from streamlit_autorefresh import st_autorefresh
+import av
 import smtplib
 from email.message import EmailMessage
+import random
+from gtts import gTTS
+import cv2
+import moviepy.editor as mp
+import tempfile
+import firebase_admin
+from firebase_admin import credentials, firestore, storage as fb_storage
+from google.cloud import storage as gcp_storage
+
+# Initialize Firebase (for Streamlit Cloud)
+if not firebase_admin._apps:
+    firebase_config = json.loads(st.secrets["firebase"]["config"])
+    cred = credentials.Certificate(firebase_config)
+    firebase_admin.initialize_app(cred, {
+        'storageBucket': st.secrets["firebase"]["storage_bucket"]
+    })
+
+db = firestore.client()
+bucket = fb_storage.bucket()
 
 # Configuration
 PROF_CSV_FILE = "prof_quiz_results.csv"
 STUDENT_CSV_FILE = "student_quiz_results.csv"
 ACTIVE_FILE = "active_students.json"
-RECORDING_DIR = "recordings"
+
+# Create temporary directories for recordings
+RECORDING_DIR = tempfile.mkdtemp()
+VIDEO_DIR = tempfile.mkdtemp()
 os.makedirs(RECORDING_DIR, exist_ok=True)
+os.makedirs(VIDEO_DIR, exist_ok=True)
 
 # Email configuration
-EMAIL_SENDER = "rajkumar.k0322@gmail.com"
-EMAIL_PASSWORD = "kcxf lzrq xnts xlng"  # App Password
+EMAIL_SENDER = st.secrets["email"]["sender"]
+EMAIL_PASSWORD = st.secrets["email"]["password"]
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
 # Secret key for professor panel
-PROFESSOR_SECRET_KEY = "RRCE@123"
+PROFESSOR_SECRET_KEY = st.secrets["app"]["professor_secret_key"]
 
 # Initialize session state
 if 'logged_in' not in st.session_state:
@@ -36,6 +59,8 @@ if 'username' not in st.session_state:
     st.session_state.username = ""
 if 'role' not in st.session_state:
     st.session_state.role = ""
+if 'camera_active' not in st.session_state:
+    st.session_state.camera_active = False
 if 'prof_verified' not in st.session_state:
     st.session_state.prof_verified = False
 if 'quiz_submitted' not in st.session_state:
@@ -44,77 +69,106 @@ if 'usn' not in st.session_state:
     st.session_state.usn = ""
 if 'section' not in st.session_state:
     st.session_state.section = ""
-if 'prof_dir' not in st.session_state:
-    st.session_state.prof_dir = "professor_data"
 
-# Dummy question bank
-QUESTIONS = [
-    {"question": "What is the format specifier for an integer in C?", 
-     "options": ["%c", "%d", "%f", "%s"], 
-     "answer": "%d",
-     "audio": None},
-    {"question": "Which loop is used when the number of iterations is known?", 
-     "options": ["while", "do-while", "for", "if"], 
-     "answer": "for",
-     "audio": None},
-]
-
-def get_db_connection():
-    conn = sqlite3.connect('quiz_app.db')
-    conn.execute('''CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    username TEXT UNIQUE,
-                    password TEXT,
-                    role TEXT DEFAULT 'student',
-                    email TEXT)''')
-    conn.execute('''CREATE TABLE IF NOT EXISTS password_changes (
-                    username TEXT PRIMARY KEY,
-                    change_count INTEGER DEFAULT 0)''')
-    conn.execute('''CREATE TABLE IF NOT EXISTS quiz_attempts (
-                    username TEXT PRIMARY KEY,
-                    attempt_count INTEGER DEFAULT 0)''')
-    return conn
-
+# Password hashing
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
+# Firebase Database Operations
 def register_user(username, password, role, email):
-    conn = get_db_connection()
-    try:
-        conn.execute("INSERT INTO users (username, password, role, email) VALUES (?, ?, ?, ?)",
-                     (username, hash_password(password), role, email))
-        conn.commit()
-        st.success("Registration successful! Please login.")
-    except sqlite3.IntegrityError:
-        st.error("Username already exists!")
-    finally:
-        conn.close()
+    user_data = {
+        "username": username,
+        "password": hash_password(password),
+        "role": role,
+        "email": email,
+        "created_at": datetime.now(timezone('UTC')),
+        "password_changes": 0,
+        "quiz_attempts": 0
+    }
+    db.collection("users").document(username).set(user_data)
 
 def authenticate_user(username, password):
-    conn = get_db_connection()
-    cursor = conn.execute("SELECT password FROM users WHERE username = ?", (username,))
-    user = cursor.fetchone()
-    conn.close()
-    return user and user[0] == hash_password(password)
+    user_ref = db.collection("users").document(username)
+    user = user_ref.get()
+    if user.exists:
+        return user.to_dict()["password"] == hash_password(password)
+    return False
 
 def get_user_role(username):
-    conn = get_db_connection()
-    cursor = conn.execute("SELECT role FROM users WHERE username = ?", (username,))
-    role = cursor.fetchone()
-    conn.close()
-    return role[0] if role else "student"
+    user_ref = db.collection("users").document(username)
+    user = user_ref.get()
+    return user.to_dict()["role"] if user.exists else "student"
 
+def get_user_email(username):
+    user_ref = db.collection("users").document(username)
+    user = user_ref.get()
+    return user.to_dict().get("email") if user.exists else None
+
+def update_password(username, new_password):
+    user_ref = db.collection("users").document(username)
+    user_ref.update({
+        "password": hash_password(new_password),
+        "password_changes": firestore.Increment(1)
+    })
+
+def get_password_change_count(username):
+    user_ref = db.collection("users").document(username)
+    user = user_ref.get()
+    return user.to_dict().get("password_changes", 0) if user.exists else 0
+
+def increment_quiz_attempt(username):
+    user_ref = db.collection("users").document(username)
+    user_ref.update({
+        "quiz_attempts": firestore.Increment(1)
+    })
+
+def get_quiz_attempt_count(username):
+    user_ref = db.collection("users").document(username)
+    user = user_ref.get()
+    return user.to_dict().get("quiz_attempts", 0) if user.exists else 0
+
+# Active student tracking (using Firestore)
+def add_active_student(username):
+    active_ref = db.collection("active_students").document(username)
+    active_ref.set({
+        "timestamp": datetime.now(timezone('UTC'))
+    })
+
+def remove_active_student(username):
+    db.collection("active_students").document(username).delete()
+
+def get_live_students():
+    active_students = db.collection("active_students").stream()
+    return [student.id for student in active_students]
+
+# Cloud Storage Operations
+def save_results_to_cloud(filename, data):
+    blob = bucket.blob(filename)
+    if isinstance(data, pd.DataFrame):
+        blob.upload_from_string(data.to_csv(index=False), content_type='text/csv')
+    else:
+        blob.upload_from_string(data)
+    return blob.public_url
+
+def get_results_from_cloud(filename):
+    blob = bucket.blob(filename)
+    if not blob.exists():
+        return None
+    content = blob.download_as_string()
+    return pd.read_csv(io.StringIO(content.decode('utf-8')))
+
+# Email functions
 def send_email_otp(to_email, otp):
     try:
         msg = EmailMessage()
         msg.set_content(f"Your OTP for Secure Quiz App is: {otp}")
         msg['Subject'] = "Email Verification OTP - Secure Quiz App"
-        msg['From'] = "rajkumar.k0322@gmail.com"
+        msg['From'] = EMAIL_SENDER
         msg['To'] = to_email
 
-        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         server.starttls()
-        server.login("rajkumar.k0322@gmail.com", "kcxf lzrq xnts xlng")
+        server.login(EMAIL_SENDER, EMAIL_PASSWORD)
         server.send_message(msg)
         server.quit()
         return True
@@ -122,31 +176,77 @@ def send_email_otp(to_email, otp):
         st.error(f"Failed to send OTP: {e}")
         return False
 
-def text_to_speech(text, filename):
-    """Convert text to speech and return audio file path"""
-    tts = gTTS(text=text, lang='en')
-    audio_path = os.path.join(tempfile.gettempdir(), filename)
-    tts.save(audio_path)
-    return audio_path
+# Quiz Questions
+QUESTIONS = [
+    {"question": "🔤 Which data type is used to store a single character in C? 🎯", "options": ["char", "int", "float", "double"], "answer": "char"},
+    {"question": "🔢 What is the output of 5 / 2 in C if both operands are integers? ⚡", "options": ["2.5", "2", "3", "Error"], "answer": "2"},
+    {"question": "🔁 Which loop is used when the number of iterations is known? 🔄", "options": ["while", "do-while", "for", "if"], "answer": "for"},
+    {"question": "📌 What is the format specifier for printing an integer in C? 🖨️", "options": ["%c", "%d", "%f", "%s"], "answer": "%d"},
+    {"question": "🚀 Which operator is used for incrementing a variable by 1 in C? ➕", "options": ["+", "++", "--", "="], "answer": "++"},
+]
 
-def autoplay_audio(file_path: str):
-    """Autoplay audio in Streamlit"""
-    with open(file_path, "rb") as f:
-        data = f.read()
-        b64 = base64.b64encode(data).decode()
-        md = f"""
-            <audio autoplay>
-            <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
-            </audio>
-            """
-        st.markdown(md, unsafe_allow_html=True)
+# Video Processing
+class VideoProcessor(VideoTransformerBase):
+    def __init__(self):
+        self.recording = True
+        self.container = av.open(os.path.join(RECORDING_DIR, "quiz_recording.mp4"), mode="w")
+        self.stream = self.container.add_stream("h264")
 
-# Main App
-st.title("🎓 Secure Quiz App with Audio Questions 🎤")
-menu = ["Register", "Login", "Take Quiz", "Change Password", "Professor Panel"]
+    def recv(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        if self.recording:
+            packet = self.stream.encode(frame)
+            if packet:
+                self.container.mux(packet)
+        return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+    def close(self):
+        self.container.close()
+
+def generate_audio(question_text, filename):
+    try:
+        tts = gTTS(text=question_text, lang='en')
+        tts.save(filename)
+        return True
+    except Exception as e:
+        st.error(f"Error generating audio: {e}")
+        return False
+
+def create_video(question_text, filename, audio_file):
+    width, height = 640, 480
+    img = np.full((height, width, 3), (255, 223, 186), dtype=np.uint8)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(filename, fourcc, 10, (width, height))
+    
+    for _ in range(50):  # 5 seconds of video at 10fps
+        img_copy = img.copy()
+        text_size = cv2.getTextSize(question_text, font, 1, 2)[0]
+        text_x = (width - text_size[0]) // 2
+        text_y = (height + text_size[1]) // 2
+        cv2.putText(img_copy, question_text, (text_x, text_y), font, 1, (0, 0, 255), 2, cv2.LINE_AA)
+        out.write(img_copy)
+    out.release()
+    
+    # Combine with audio using moviepy
+    try:
+        video_clip = mp.VideoFileClip(filename)
+        audio_clip = mp.AudioFileClip(audio_file)
+        final_video = video_clip.set_audio(audio_clip)
+        final_path = filename.replace('.mp4', '_final.mp4')
+        final_video.write_videofile(final_path, codec='libx264', fps=10, audio_codec='aac')
+        return final_path
+    except Exception as e:
+        st.error(f"Error creating video: {e}")
+        return filename  # Return video without audio if there's an error
+
+# UI Starts
+st.title("🎓 Secure Quiz App with Webcam 📹")
+menu = ["Register", "Login", "Take Quiz", "Change Password", "Professor Panel", "Professor Monitoring Panel", "View Recorded Video"]
 choice = st.sidebar.selectbox("Menu", menu)
 
 if choice == "Register":
+    st.subheader("Register")
     username = st.text_input("Username")
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
@@ -158,7 +258,7 @@ if choice == "Register":
             if send_email_otp(email, otp):
                 st.session_state['reg_otp'] = otp
                 st.session_state['reg_data'] = (username, password, role, email)
-                st.success("OTP sent to your email.")
+                st.success("OTP sent to your email!")
     
     otp_entered = st.text_input("Enter OTP")
     if st.button("Verify and Register"):
@@ -167,12 +267,14 @@ if choice == "Register":
             register_user(username, password, role, email)
             del st.session_state['reg_otp']
             del st.session_state['reg_data']
+            st.success("Registration successful! Please login.")
         else:
             st.error("Incorrect OTP!")
 
-    # ---------- Login Form ----------
-    username = st.text_input("Username", value=st.session_state.login_username, key="login_username_widget")
-    password = st.text_input("Password", type="password", value=st.session_state.login_password, key="login_password_widget")
+elif choice == "Login":
+    st.subheader("Login")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
     
     if st.button("Login"):
         if authenticate_user(username, password):
@@ -183,84 +285,43 @@ if choice == "Register":
         else:
             st.error("Invalid username or password.")
 
-    # ---------- Forgot Password ----------
-    st.markdown("### Forgot Password?")
-    forgot_email = st.text_input("Enter registered email", key="forgot_email_input")
+    # Password reset
+    st.markdown("---")
+    st.subheader("Forgot Password?")
+    reset_email = st.text_input("Enter your registered email")
     
     if st.button("Send Reset OTP"):
-        conn = get_db_connection()
-        user = conn.execute("SELECT username FROM users WHERE email = ?", (forgot_email,)).fetchone()
-        conn.close()
-
-        if user:
+        user_ref = db.collection("users").where("email", "==", reset_email).limit(1).get()
+        if user_ref:
             otp = str(random.randint(100000, 999999))
-            st.session_state['reset_email'] = forgot_email
-            st.session_state['reset_otp'] = otp
-            st.session_state['reset_user'] = user[0]
-            if send_email_otp(forgot_email, otp):
-                st.success("OTP sent to your email.")
+            if send_email_otp(reset_email, otp):
+                st.session_state['reset_otp'] = otp
+                st.session_state['reset_email'] = reset_email
+                st.session_state['reset_user'] = user_ref[0].id
+                st.success("OTP sent to your email!")
         else:
-            st.error("Email not registered.")
+            st.error("Email not found!")
 
-    # ---------- Reset Password ----------
-    if 'reset_otp' in st.session_state and 'reset_email' in st.session_state:
-        st.markdown("### Reset Your Password")
-        entered_otp = st.text_input("Enter OTP to reset password", key="reset_otp_input")
-        new_password = st.text_input("New Password", type="password", key="reset_new_password")
-        confirm_password = st.text_input("Confirm New Password", type="password", key="reset_confirm_password")
-
+    if 'reset_otp' in st.session_state:
+        st.markdown("---")
+        st.subheader("Reset Password")
+        entered_otp = st.text_input("Enter OTP")
+        new_password = st.text_input("New Password", type="password")
+        confirm_password = st.text_input("Confirm Password", type="password")
+        
         if st.button("Reset Password"):
-            if entered_otp == st.session_state.get('reset_otp'):
+            if entered_otp == st.session_state['reset_otp']:
                 if new_password == confirm_password:
-                    conn = get_db_connection()
-                    try:
-                        # Update password in users table
-                        conn.execute("UPDATE users SET password = ? WHERE username = ?",
-                                  (hash_password(new_password), st.session_state['reset_user']))
-                        
-                        # Verify the password was updated
-                        cursor = conn.execute("SELECT password FROM users WHERE username = ?",
-                                             (st.session_state['reset_user'],))
-                        updated_password = cursor.fetchone()[0]
-                        
-                        if updated_password == hash_password(new_password):
-                            # Update password change count
-                            cursor = conn.execute("SELECT change_count FROM password_changes WHERE username = ?",
-                                                (st.session_state['reset_user'],))
-                            record = cursor.fetchone()
-                            
-                            if record:
-                                conn.execute("UPDATE password_changes SET change_count = change_count + 1 WHERE username = ?",
-                                           (st.session_state['reset_user'],))
-                            else:
-                                conn.execute("INSERT INTO password_changes (username, change_count) VALUES (?, 1)",
-                                           (st.session_state['reset_user'],))
-                            
-                            conn.commit()
-                            
-                            # Store credentials for auto-fill (without modifying widget state directly)
-                            st.session_state.login_username = st.session_state['reset_user']
-                            st.session_state.login_password = new_password
-                            
-                            st.success("Password reset successfully! Your credentials have been filled below. Click Login to continue.")
-                            
-                            # Clear reset-related session state
-                            for key in ['reset_otp', 'reset_email', 'reset_user']:
-                                if key in st.session_state:
-                                    del st.session_state[key]
-                            
-                            # Rerun to update the UI with filled credentials
-                            st.rerun()
-                        else:
-                            st.error("Password update failed. Please try again.")
-                    except Exception as e:
-                        st.error(f"Error updating password: {str(e)}")
-                    finally:
-                        conn.close()
+                    update_password(st.session_state['reset_user'], new_password)
+                    st.success("Password updated successfully!")
+                    for key in ['reset_otp', 'reset_email', 'reset_user']:
+                        if key in st.session_state:
+                            del st.session_state[key]
                 else:
-                    st.error("Passwords do not match. Please try again.")
+                    st.error("Passwords don't match!")
             else:
-                st.error("Incorrect OTP. Please try again.")
+                st.error("Invalid OTP!")
+
 elif choice == "Take Quiz":
     if not st.session_state.logged_in:
         st.warning("Please login first!")
@@ -272,12 +333,8 @@ elif choice == "Take Quiz":
         st.session_state.section = section.strip().upper()
 
         if usn and section:
-            conn = get_db_connection()
-            cur = conn.cursor()
-            cur.execute("SELECT attempt_count FROM quiz_attempts WHERE username = ?", (username,))
-            record = cur.fetchone()
-            attempt_count = record[0] if record else 0
-
+            attempt_count = get_quiz_attempt_count(username)
+            
             if attempt_count >= 2:
                 st.error("You have already taken the quiz 2 times. No more attempts allowed.")
             else:
@@ -298,28 +355,30 @@ elif choice == "Take Quiz":
 
                 answers = {}
 
-                # Display questions with audio
+                if not st.session_state.quiz_submitted and not st.session_state.camera_active:
+                    add_active_student(username)
+                    st.session_state.camera_active = True
+
+                if st.session_state.camera_active and not st.session_state.quiz_submitted:
+                    st.markdown("<span style='color:red;'>📹 Webcam is ON</span>", unsafe_allow_html=True)
+                    webrtc_streamer(
+                        key="camera",
+                        mode=WebRtcMode.SENDRECV,
+                        media_stream_constraints={"video": True, "audio": False},
+                        video_processor_factory=VideoProcessor,
+                    )
+
                 for idx, question in enumerate(QUESTIONS):
-                    st.markdown(f"### Question {idx+1}")
+                    question_text = question["question"]
+                    audio_filename = os.path.join(VIDEO_DIR, f"question_{idx}.mp3")
+                    video_filename = os.path.join(VIDEO_DIR, f"question_{idx}.mp4")
                     
-                    # Generate audio if not already generated
-                    if question["audio"] is None:
-                        question_text = f"Question {idx+1}: {question['question']}. Options are: " + ", ".join(question['options'])
-                        audio_path = text_to_speech(question_text, f"q{idx}.mp3")
-                        question["audio"] = audio_path
+                    if generate_audio(question_text, audio_filename):
+                        final_video_path = create_video(question_text, video_filename, audio_filename)
+                        st.video(final_video_path)
                     
-                    # Play audio button
-                    if st.button(f"🔊 Play Question {idx+1}"):
-                        autoplay_audio(question["audio"])
-                    
-                    # Display question text
-                    st.write(question['question'])
-                    
-                    # Answer options
-                    ans = st.radio("Select your answer:", 
-                                 question['options'], 
-                                 key=f"q{idx}", 
-                                 index=None)
+                    st.markdown(f"**Q{idx+1}:** {question['question']}")
+                    ans = st.radio("Select your answer:", question['options'], key=f"q{idx}", index=None)
                     answers[question['question']] = ans
 
                 submit_btn = st.button("Submit Quiz")
@@ -334,99 +393,53 @@ elif choice == "Take Quiz":
                                 score += 1
                         time_taken = round(time.time() - st.session_state.quiz_start_time, 2)
 
-                        new_row = pd.DataFrame([[username, hash_password(username), st.session_state.usn, st.session_state.section, score, time_taken, datetime.now()]],
-                                               columns=["Username", "Hashed_Password", "USN", "Section", "Score", "Time_Taken", "Timestamp"])
+                        # Save results to Firestore
+                        result_data = {
+                            "username": username,
+                            "usn": st.session_state.usn,
+                            "section": st.session_state.section,
+                            "score": score,
+                            "time_taken": time_taken,
+                            "timestamp": datetime.now(timezone('UTC'))
+                        }
+                        db.collection("quiz_results").add(result_data)
+                        
+                        # Also save to CSV in cloud storage
+                        new_row = pd.DataFrame([[
+                            username, 
+                            hash_password(username), 
+                            st.session_state.usn, 
+                            st.session_state.section, 
+                            score, 
+                            time_taken, 
+                            datetime.now(timezone('UTC'))
+                        ]], columns=["Username", "Hashed_Password", "USN", "Section", "Score", "Time_Taken", "Timestamp"])
+                        
+                        save_results_to_cloud(PROF_CSV_FILE, new_row)
+                        save_results_to_cloud(f"{st.session_state.section}_results.csv", new_row)
 
-                        if os.path.exists(PROF_CSV_FILE):
-                            prof_df = pd.read_csv(PROF_CSV_FILE)
-                            prof_df = pd.concat([prof_df, new_row], ignore_index=True)
-                        else:
-                            prof_df = new_row
-                        prof_df.to_csv(PROF_CSV_FILE, index=False)
-
-                        section_file = f"{st.session_state.section}_results.csv"
-                        if os.path.exists(section_file):
-                            sec_df = pd.read_csv(section_file)
-                            sec_df = pd.concat([sec_df, new_row], ignore_index=True)
-                        else:
-                            sec_df = new_row
-                        sec_df.to_csv(section_file, index=False)
-
-                        if record:
-                            cur.execute("UPDATE quiz_attempts SET attempt_count = attempt_count + 1 WHERE username = ?", (username,))
-                        else:
-                            cur.execute("INSERT INTO quiz_attempts (username, attempt_count) VALUES (?, ?)", (username, 1))
-                        conn.commit()
-                        conn.close()
-
-                        st.success(f"Quiz submitted successfully! Your score is {score}/{len(QUESTIONS)}.")
-                        st.session_state.quiz_submitted = True
-
-elif choice == "Professor Panel":
-    st.subheader("Professor Access Panel")
-    
-    if 'prof_secret_verified' not in st.session_state:
-        secret_key = st.text_input("Enter Professor Secret Key to continue", type="password")
-        
-        if st.button("Verify Key"):
-            if secret_key == PROFESSOR_SECRET_KEY:
-                st.session_state.prof_secret_verified = True
-                st.rerun()
-            else:
-                st.error("Invalid secret key! Access denied.")
-    else:
-        st.success("Professor access granted!")
-        
-        # View results
-        if os.path.exists(PROF_CSV_FILE):
-            df = pd.read_csv(PROF_CSV_FILE)
-            st.dataframe(df)
-            
-            # Download option
-            st.download_button(
-                label="Download Results",
-                data=df.to_csv(index=False),
-                file_name="quiz_results.csv",
-                mime="text/csv"
-            )
-        else:
-            st.warning("No quiz results available yet.")
-                        prof_df.to_csv(PROF_CSV_FILE, index=False)
-
-                        section_file = f"{st.session_state.section}_results.csv"
-                        if os.path.exists(section_file):
-                            sec_df = pd.read_csv(section_file)
-                            sec_df = pd.concat([sec_df, new_row], ignore_index=True)
-                        else:
-                            sec_df = new_row
-                        sec_df.to_csv(section_file, index=False)
-
-                        if record:
-                            cur.execute("UPDATE quiz_attempts SET attempt_count = attempt_count + 1 WHERE username = ?", (username,))
-                        else:
-                            cur.execute("INSERT INTO quiz_attempts (username, attempt_count) VALUES (?, ?)", (username, 1))
-                        conn.commit()
-                        conn.close()
-
-                        st.success(f"Quiz submitted successfully! Your score is {score}/{len(QUESTIONS)}.")
-                        st.session_state.quiz_submitted = Tru
+                        # Update attempts
+                        increment_quiz_attempt(username)
 
                         # Send results via email
-                        conn = get_db_connection()
-                        email_result = conn.execute("SELECT email FROM users WHERE username = ?", (username,)).fetchone()
-                        conn.close()
-                        if email_result:
-                            student_email = email_result[0]
+                        student_email = get_user_email(username)
+                        if student_email:
                             try:
                                 msg = EmailMessage()
-                                msg.set_content(f"Dear {username},\n\nYou have successfully submitted your quiz.\nScore: {score}/{len(QUESTIONS)}\nTime Taken: {time_taken} seconds\n\nThank you for participating.")
+                                msg.set_content(f"""Dear {username},
+                                
+You have successfully submitted your quiz.
+Score: {score}/{len(QUESTIONS)}
+Time Taken: {time_taken} seconds
+
+Thank you for participating.""")
                                 msg['Subject'] = "Quiz Submission Confirmation"
-                                msg['From'] = "rajkumar.k0322@gmail.com"
+                                msg['From'] = EMAIL_SENDER
                                 msg['To'] = student_email
 
-                                server = smtplib.SMTP('smtp.gmail.com', 587)
+                                server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
                                 server.starttls()
-                                server.login("rajkumar.k0322@gmail.com", "kcxf lzrq xnts xlng")
+                                server.login(EMAIL_SENDER, EMAIL_PASSWORD)
                                 server.send_message(msg)
                                 server.quit()
                             except Exception as e:
@@ -437,7 +450,6 @@ elif choice == "Professor Panel":
                         st.session_state.camera_active = False
                         remove_active_student(username)
 
-
 elif choice == "Change Password":
     if not st.session_state.logged_in:
         st.warning("Please login first!")
@@ -445,34 +457,22 @@ elif choice == "Change Password":
         username = st.session_state.username
         old_pass = st.text_input("Old Password", type="password")
         new_pass = st.text_input("New Password", type="password")
+        confirm_pass = st.text_input("Confirm New Password", type="password")
+        
         if st.button("Change Password"):
             if not authenticate_user(username, old_pass):
                 st.error("Old password is incorrect!")
+            elif new_pass != confirm_pass:
+                st.error("New passwords don't match!")
+            elif get_password_change_count(username) >= 2:
+                st.error("Password can only be changed twice.")
             else:
-                conn = get_db_connection()
-                cursor = conn.cursor()
-                cursor.execute("SELECT change_count FROM password_changes WHERE username = ?", (username,))
-                record = cursor.fetchone()
-                if record and record[0] >= 2:
-                    st.error("Password can only be changed twice.")
-                else:
-                    conn.execute("UPDATE users SET password = ? WHERE username = ?",
-                                 (hash_password(new_pass), username))
-                    if record:
-                        conn.execute("UPDATE password_changes SET change_count = change_count + 1 WHERE username = ?",
-                                     (username,))
-                    else:
-                        conn.execute("INSERT INTO password_changes (username, change_count) VALUES (?, 1)",
-                                     (username,))
-                    conn.commit()
-                    st.success("Password updated successfully.")
-                conn.close()
-
+                update_password(username, new_pass)
+                st.success("Password updated successfully!")
 
 elif choice == "Professor Panel":
-    st.subheader("\U0001F9D1‍\U0001F3EB Professor Access Panel")
+    st.subheader("👨‍🏫 Professor Access Panel")
     
-    # First check for secret key
     if 'prof_secret_verified' not in st.session_state:
         secret_key = st.text_input("Enter Professor Secret Key to continue", type="password")
         
@@ -483,92 +483,82 @@ elif choice == "Professor Panel":
             else:
                 st.error("Invalid secret key! Access denied.")
     else:
-        # After secret key verification, show login/registration tabs
         tab1, tab2 = st.tabs(["Professor Login", "Professor Registration"])
         
-        with tab1:  # Login tab
+        with tab1:
             if not st.session_state.get('prof_logged_in', False):
                 prof_id = st.text_input("Professor ID")
                 prof_pass = st.text_input("Professor Password", type="password")
                 
                 if st.button("Login as Professor"):
-                    conn = get_db_connection()
-                    cursor = conn.execute("SELECT password, role, email FROM users WHERE username = ? AND role = 'professor'", 
-                                        (prof_id,))
-                    prof_data = cursor.fetchone()
-                    conn.close()
-                    
-                    if prof_data and prof_data[0] == hash_password(prof_pass):
-                        st.session_state.prof_logged_in = True
-                        st.session_state.username = prof_id
-                        st.session_state.role = "professor"
-                        st.success(f"Welcome Professor {prof_id}!")
-                        os.makedirs(st.session_state.prof_dir, exist_ok=True)
-                        st.rerun()
+                    user_ref = db.collection("users").document(prof_id)
+                    user = user_ref.get()
+                    if user.exists and user.to_dict()["role"] == "professor":
+                        if user.to_dict()["password"] == hash_password(prof_pass):
+                            st.session_state.prof_logged_in = True
+                            st.session_state.username = prof_id
+                            st.session_state.role = "professor"
+                            st.success(f"Welcome Professor {prof_id}!")
+                            st.rerun()
+                        else:
+                            st.error("Invalid password!")
                     else:
-                        st.error("Invalid Professor credentials")
+                        st.error("Professor not found!")
             else:
-                # Show professor dashboard after successful login
                 st.success(f"Welcome Professor {st.session_state.username}!")
                 st.subheader("Student Results Management")
                 
-                # View results section
-                result_files = []
-                if os.path.exists(PROF_CSV_FILE):
-                    result_files.append(PROF_CSV_FILE)
+                # View all results
+                results_ref = db.collection("quiz_results")
+                results = [doc.to_dict() for doc in results_ref.stream()]
                 
-                # Check for section-wise files
-                section_files = [f for f in os.listdir() if f.endswith("_results.csv")]
-                result_files.extend(section_files)
-                
-                if result_files:
-                    selected_file = st.selectbox("Select results file", result_files)
-                    try:
-                        df = pd.read_csv(selected_file)
-                        
-                        # Display statistics
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Total Students", len(df))
-                        with col2:
-                            avg_score = df['Score'].mean()
-                            st.metric("Average Score", f"{avg_score:.1f}/{len(QUESTIONS)}")
-                        with col3:
-                            pass_rate = (len(df[df['Score'] >= len(QUESTIONS)/2]) / len(df)) * 100
-                            st.metric("Pass Rate", f"{pass_rate:.1f}%")
+                if results:
+                    df = pd.DataFrame(results)
+                    
+                    # Display statistics
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Total Students", len(df))
+                    with col2:
+                        avg_score = df['score'].mean()
+                        st.metric("Average Score", f"{avg_score:.1f}/{len(QUESTIONS)}")
+                    with col3:
+                        pass_rate = (len(df[df['score'] >= len(QUESTIONS)/2]) / len(df)) * 100
+                        st.metric("Pass Rate", f"{pass_rate:.1f}%")
 
-                        # Show full results
-                        st.markdown("### Detailed Results")
-                        sort_by = st.selectbox("Sort by", ["Score", "Time_Taken", "Timestamp", "Section"])
-                        ascending = st.checkbox("Ascending order", True)
-                        sorted_df = df.sort_values(by=sort_by, ascending=ascending)
-                        st.dataframe(sorted_df)
-                        
-                        # Download option
-                        st.download_button(
-                            label="Download Results",
-                            data=sorted_df.to_csv(index=False),
-                            file_name=f"sorted_{selected_file}",
-                            mime="text/csv"
-                        )
-                        
-                    except Exception as e:
-                        st.error(f"Error loading results: {e}")
+                    # Filter and sort options
+                    st.subheader("Filter Results")
+                    section_filter = st.selectbox("Filter by Section", ["All"] + list(df['section'].unique()))
+                    if section_filter != "All":
+                        df = df[df['section'] == section_filter]
+                    
+                    sort_by = st.selectbox("Sort by", ["score", "time_taken", "timestamp", "section"])
+                    ascending = st.checkbox("Ascending order", True)
+                    df = df.sort_values(by=sort_by, ascending=ascending)
+                    
+                    st.dataframe(df)
+                    
+                    # Download option
+                    csv = df.to_csv(index=False)
+                    st.download_button(
+                        label="Download Results",
+                        data=csv,
+                        file_name=f"quiz_results_{section_filter if section_filter != 'All' else 'all'}.csv",
+                        mime="text/csv"
+                    )
                 else:
                     st.warning("No results available yet.")
                 
-                # Logout button
                 if st.button("Logout"):
                     st.session_state.prof_logged_in = False
                     st.session_state.username = ""
                     st.session_state.role = ""
                     st.rerun()
         
-        with tab2:  # Registration tab
+        with tab2:
             st.subheader("Professor Registration")
             st.warning("Professor accounts require verification.")
             
-            # Registration form
             full_name = st.text_input("Full Name")
             designation = st.text_input("Designation")
             department = st.selectbox("Department", ["CSE", "ISE", "ECE", "EEE", "MECH", "CIVIL"])
@@ -576,24 +566,14 @@ elif choice == "Professor Panel":
             
             if st.button("Request Account"):
                 if full_name and designation and department and institutional_email:
-                    # Generate credentials
                     prof_id = f"PROF-{random.randint(10000, 99999)}"
                     temp_password = str(random.randint(100000, 999999))
                     
-                    # Register professor
-                    conn = get_db_connection()
+                    register_user(prof_id, temp_password, "professor", institutional_email)
+                    
                     try:
-                        conn.execute("INSERT INTO users (username, password, role, email) VALUES (?, ?, ?, ?)",
-                                    (prof_id, hash_password(temp_password), "professor", institutional_email))
-                        conn.commit()
-                        
-                        # Create directory
-                        os.makedirs(f"professor_data/{prof_id}", exist_ok=True)
-                        
-                        # Send credentials
-                        try:
-                            msg = EmailMessage()
-                            msg.set_content(f"""Dear {full_name},
+                        msg = EmailMessage()
+                        msg.set_content(f"""Dear {full_name},
 
 Your professor account has been created:
 
@@ -604,23 +584,19 @@ Please login and change your password immediately.
 
 Regards,
 Quiz App Team""")
-                            msg['Subject'] = "Professor Account Credentials"
-                            msg['From'] = EMAIL_SENDER
-                            msg['To'] = institutional_email
+                        msg['Subject'] = "Professor Account Credentials"
+                        msg['From'] = EMAIL_SENDER
+                        msg['To'] = institutional_email
 
-                            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-                            server.starttls()
-                            server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-                            server.send_message(msg)
-                            server.quit()
-                            
-                            st.success("Account created! Credentials sent to your email.")
-                        except Exception as e:
-                            st.error(f"Account created but email failed: {e}")
-                    except sqlite3.IntegrityError:
-                        st.error("Professor with this email already exists!")
-                    finally:
-                        conn.close()
+                        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+                        server.starttls()
+                        server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+                        server.send_message(msg)
+                        server.quit()
+                        
+                        st.success("Account created! Credentials sent to your email.")
+                    except Exception as e:
+                        st.error(f"Account created but email failed: {e}")
                 else:
                     st.error("Please fill all fields!")
 
@@ -636,7 +612,7 @@ elif choice == "Professor Monitoring Panel":
                 st.error("Invalid secret key! Access denied.")
     else:
         st_autorefresh(interval=10000, key="monitor_refresh")
-        st.header("\U0001F4E1 Live Monitoring Dashboard")
+        st.header("📊 Live Monitoring Dashboard")
         st.info("Monitoring students currently taking the quiz")
         
         live_students = get_live_students()
@@ -649,20 +625,15 @@ elif choice == "Professor Monitoring Panel":
                 
             st.markdown("---")
             st.markdown("### Recent Quiz Submissions")
-            if os.path.exists(PROF_CSV_FILE):
-                df = pd.read_csv(PROF_CSV_FILE)
-                recent_submissions = df.sort_values("Timestamp", ascending=False).head(5)
-                st.dataframe(recent_submissions)
+            results_ref = db.collection("quiz_results").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(5)
+            recent_results = [doc.to_dict() for doc in results_ref.stream()]
+            
+            if recent_results:
+                st.table(pd.DataFrame(recent_results))
             else:
                 st.warning("No quiz submissions yet.")
 
 elif choice == "View Recorded Video":
     st.subheader("Recorded Sessions")
-    video_files = [f for f in os.listdir(RECORDING_DIR) if f.endswith(".mp4")]
-    
-    if video_files:
-        selected_video = st.selectbox("Select recording", video_files)
-        video_path = os.path.join(RECORDING_DIR, selected_video)
-        st.video(video_path)
-    else:
-        st.warning("No recordings available.")
+    # Note: In Streamlit Cloud, recordings would need to be saved to cloud storage
+    st.warning("Recording playback is not fully supported in this cloud version. For full functionality, run locally.")
