@@ -12,31 +12,19 @@ import av
 import smtplib
 from email.message import EmailMessage
 import random
-
-def send_email_otp(to_email, otp):
-    try:
-        msg = EmailMessage()
-        msg.set_content(f"Your OTP for Secure Quiz App is: {otp}")
-        msg['Subject'] = "Email Verification OTP - Secure Quiz App"
-        msg['From'] = "rajkumar.k0322@gmail.com"
-        msg['To'] = to_email
-
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login("rajkumar.k0322@gmail.com", "kcxf lzrq xnts xlng")  # App Password
-        server.send_message(msg)
-        server.quit()
-        return True
-    except Exception as e:
-        st.error(f"Failed to send OTP: {e}")
-        return False
+import cv2
+import numpy as np
+from gtts import gTTS
+import moviepy.editor as mp
 
 # Configuration
 PROF_CSV_FILE = "prof_quiz_results.csv"
 STUDENT_CSV_FILE = "student_quiz_results.csv"
 ACTIVE_FILE = "active_students.json"
 RECORDING_DIR = "recordings"
+VIDEO_DIR = "question_videos"
 os.makedirs(RECORDING_DIR, exist_ok=True)
+os.makedirs(VIDEO_DIR, exist_ok=True)
 
 # Email configuration
 EMAIL_SENDER = "rajkumar.k0322@gmail.com"
@@ -66,6 +54,10 @@ if 'section' not in st.session_state:
     st.session_state.section = ""
 if 'prof_dir' not in st.session_state:
     st.session_state.prof_dir = "professor_data"
+if 'auto_submit' not in st.session_state:
+    st.session_state.auto_submit = False
+if 'quiz_start_time' not in st.session_state:
+    st.session_state.quiz_start_time = None
 
 def get_db_connection():
     conn = sqlite3.connect('quiz_app.db')
@@ -91,6 +83,24 @@ def get_db_connection():
 # Password hashing
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
+
+def send_email_otp(to_email, otp):
+    try:
+        msg = EmailMessage()
+        msg.set_content(f"Your OTP for Secure Quiz App is: {otp}")
+        msg['Subject'] = "Email Verification OTP - Secure Quiz App"
+        msg['From'] = EMAIL_SENDER
+        msg['To'] = to_email
+
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        st.error(f"Failed to send OTP: {e}")
+        return False
 
 # Register user
 def register_user(username, password, role, email):
@@ -171,8 +181,6 @@ QUESTIONS = [
     {"question": "🔍 What does the 'sizeof' operator return in C? 📏", "options": ["The size of a variable", "The value of a variable", "The address of a variable", "The type of a variable"], "answer": "The size of a variable"},
 ]
 
-
-
 # Generate audio for questions
 def generate_audio(question_text, filename):
     if not os.path.exists(filename):
@@ -210,10 +218,10 @@ def create_video(question_text, filename, audio_file):
     return video_path
 
 # Video Processor for Streamlit WebRTC
-class VideoProcessor(VideoProcessorBase):
+class VideoProcessor(VideoTransformerBase):
     def __init__(self):
         self.recording = True
-        self.container = av.open(os.path.join(RECORDING_DIR, "quiz_recording.mp4"), mode="w")
+        self.container = av.open(os.path.join(RECORDING_DIR, f"quiz_recording_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"), mode="w")
         self.stream = self.container.add_stream("h264")
 
     def recv(self, frame):
@@ -233,6 +241,7 @@ menu = ["Register", "Login", "Take Quiz", "Change Password", "Professor Panel", 
 choice = st.sidebar.selectbox("Menu", menu)
 
 if choice == "Register":
+    st.subheader("Registration")
     username = st.text_input("Username")
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
@@ -248,12 +257,13 @@ if choice == "Register":
     
     otp_entered = st.text_input("Enter OTP")
     if st.button("Verify and Register"):
-        if otp_entered == st.session_state.get('reg_otp'):
+        if 'reg_otp' in st.session_state and otp_entered == st.session_state['reg_otp']:
             username, password, role, email = st.session_state['reg_data']
             register_user(username, password, role, email)
             # Clear registration data
             del st.session_state['reg_otp']
             del st.session_state['reg_data']
+            st.rerun()
         else:
             st.error("Incorrect OTP!")
 
@@ -276,6 +286,7 @@ elif choice == "Login":
             st.session_state.username = username
             st.session_state.role = get_user_role(username)
             st.success("Login successful!")
+            st.rerun()
         else:
             st.error("Invalid username or password.")
 
@@ -357,6 +368,7 @@ elif choice == "Login":
                     st.error("Passwords do not match. Please try again.")
             else:
                 st.error("Incorrect OTP. Please try again.")
+
 elif choice == "Take Quiz":
     if not st.session_state.logged_in:
         st.warning("Please login first!")
@@ -433,7 +445,7 @@ elif choice == "Take Quiz":
                                 score += 1
                         time_taken = round(time.time() - st.session_state.quiz_start_time, 2)
 
-                        new_row = pd.DataFrame([[username, hash_password(username), st.session_state.usn, st.session_state.section, score, time_taken, datetime.now()]],
+                        new_row = pd.DataFrame([[username, hash_password(username), st.session_state.usn, st.session_state.section, score, time_taken, datetime.now().strftime("%Y-%m-%d %H:%M:%S")]],
                                            columns=["Username", "Hashed_Password", "USN", "Section", "Score", "Time_Taken", "Timestamp"])
 
                         # Append to professor's CSV
@@ -471,12 +483,12 @@ elif choice == "Take Quiz":
                                 msg = EmailMessage()
                                 msg.set_content(f"Dear {username},\n\nYou have successfully submitted your quiz.\nScore: {score}/{len(QUESTIONS)}\nTime Taken: {time_taken} seconds\n\nThank you for participating.")
                                 msg['Subject'] = "Quiz Submission Confirmation"
-                                msg['From'] = "rajkumar.k0322@gmail.com"
+                                msg['From'] = EMAIL_SENDER
                                 msg['To'] = student_email
 
-                                server = smtplib.SMTP('smtp.gmail.com', 587)
+                                server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
                                 server.starttls()
-                                server.login("rajkumar.k0322@gmail.com", "kcxf lzrq xnts xlng")
+                                server.login(EMAIL_SENDER, EMAIL_PASSWORD)
                                 server.send_message(msg)
                                 server.quit()
                             except Exception as e:
@@ -487,8 +499,7 @@ elif choice == "Take Quiz":
                         st.session_state.quiz_submitted = True
                         st.session_state.camera_active = False
                         remove_active_student(username)
-
-
+                        st.rerun()
 
 elif choice == "Change Password":
     if not st.session_state.logged_in:
@@ -519,7 +530,6 @@ elif choice == "Change Password":
                     conn.commit()
                     st.success("Password updated successfully.")
                 conn.close()
-
 
 elif choice == "Professor Panel":
     st.subheader("\U0001F9D1‍\U0001F3EB Professor Access Panel")
