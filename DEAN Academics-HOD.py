@@ -7,21 +7,16 @@ import os
 import json
 from datetime import datetime
 import random
-import cv2
-import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-from pydub import AudioSegment
-import subprocess
+import base64
 from gtts import gTTS
+import tempfile
 
 # Configuration
 PROF_CSV_FILE = "prof_quiz_results.csv"
 STUDENT_CSV_FILE = "student_quiz_results.csv"
 ACTIVE_FILE = "active_students.json"
 RECORDING_DIR = "recordings"
-QUESTION_VIDEO_DIR = "question_videos"
 os.makedirs(RECORDING_DIR, exist_ok=True)
-os.makedirs(QUESTION_VIDEO_DIR, exist_ok=True)
 
 # Email configuration
 EMAIL_SENDER = "rajkumar.k0322@gmail.com"
@@ -39,8 +34,6 @@ if 'username' not in st.session_state:
     st.session_state.username = ""
 if 'role' not in st.session_state:
     st.session_state.role = ""
-if 'camera_active' not in st.session_state:
-    st.session_state.camera_active = False
 if 'prof_verified' not in st.session_state:
     st.session_state.prof_verified = False
 if 'quiz_submitted' not in st.session_state:
@@ -54,8 +47,14 @@ if 'prof_dir' not in st.session_state:
 
 # Dummy question bank
 QUESTIONS = [
-    {"question": "What is the format specifier for an integer in C?", "options": ["%c", "%d", "%f", "%s"], "answer": "%d"},
-    {"question": "Which loop is used when the number of iterations is known?", "options": ["while", "do-while", "for", "if"], "answer": "for"},
+    {"question": "What is the format specifier for an integer in C?", 
+     "options": ["%c", "%d", "%f", "%s"], 
+     "answer": "%d",
+     "audio": None},
+    {"question": "Which loop is used when the number of iterations is known?", 
+     "options": ["while", "do-while", "for", "if"], 
+     "answer": "for",
+     "audio": None},
 ]
 
 def get_db_connection():
@@ -103,133 +102,46 @@ def get_user_role(username):
     conn.close()
     return role[0] if role else "student"
 
-def create_question_video(question_data, idx):
-    """Create a video for a single question with options using OpenCV"""
-    video_path = os.path.join(QUESTION_VIDEO_DIR, f"q{idx}.mp4")
-    
-    if os.path.exists(video_path):
-        return video_path
-    
-    # Video parameters
-    width, height = 800, 600
-    fps = 1  # Low FPS since it's just text
-    duration = 5  # seconds
-    frame_count = fps * duration
-    
-    # Create video writer
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
-    
-    # Create blank image with text
-    for _ in range(frame_count):
-        img = np.zeros((height, width, 3), dtype=np.uint8)
-        img.fill(73)  # Fill with background color
-        
-        # Add text to image
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        cv2.putText(img, f"Question {idx+1}: {question_data['question']}", 
-                   (50, 50), font, 0.7, (255, 255, 255), 2)
-        
-        # Add options
-        y_offset = 150
-        for i, option in enumerate(question_data['options']):
-            cv2.putText(img, f"{chr(65+i)}. {option}", 
-                       (100, y_offset), font, 0.7, (255, 255, 255), 2)
-            y_offset += 50
-        
-        out.write(img)
-    
-    out.release()
-    
-    return video_path
-
-def generate_all_question_videos(questions):
-    """Generate videos for all questions"""
-    video_paths = []
-    for idx, question in enumerate(questions):
-        video_path = create_question_video(question, idx)
-        video_paths.append(video_path)
-    return video_paths
-question_videos = generate_all_question_videos(QUESTIONS)
-def create_video(question_text, filename, audio_file):
-    """Create video with text and audio using OpenCV and FFmpeg"""
-    # Ensure the VIDEO_DIR exists
-    os.makedirs(VIDEO_DIR, exist_ok=True)
-    
-    # Create full paths
-    video_path = os.path.join(VIDEO_DIR, filename)
-    audio_path = os.path.join(VIDEO_DIR, audio_file)
-    
-    # Generate audio if it doesn't exist
-    if not os.path.exists(audio_path):
-        if not generate_audio(question_text, audio_path):
-            return None
-    
-    # Create video with OpenCV if it doesn't exist
-    if not os.path.exists(video_path):
-        width, height = 640, 480
-        img = np.full((height, width, 3), (255, 223, 186), dtype=np.uint8)
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(video_path, fourcc, 10, (width, height))
-        
-        for _ in range(50):  # 5 seconds of video at 10fps
-            img_copy = img.copy()
-            text_size = cv2.getTextSize(question_text, font, 1, 2)[0]
-            text_x = (width - text_size[0]) // 2
-            text_y = (height + text_size[1]) // 2
-            cv2.putText(img_copy, question_text, (text_x, text_y), font, 1, (0, 0, 255), 2, cv2.LINE_AA)
-            out.write(img_copy)
-        out.release()
-    
-    # Combine with audio using FFmpeg
+def send_email_otp(to_email, otp):
     try:
-        final_path = video_path.replace('.mp4', '_final.mp4')
-        
-        # Use FFmpeg to combine video and audio
-        cmd = [
-            'ffmpeg',
-            '-y',  # Overwrite output file without asking
-            '-i', video_path,
-            '-i', audio_path,
-            '-c:v', 'copy',  # Copy video stream
-            '-c:a', 'aac',   # Encode audio with AAC
-            '-strict', 'experimental',
-            '-shortest',     # Finish encoding when the shortest input ends
-            final_path
-        ]
-        
-        # Run FFmpeg command
-        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        
-        return final_path
-    except subprocess.CalledProcessError as e:
-        st.error(f"FFmpeg error: {e.stderr.decode() if e.stderr else 'Unknown error'}")
-        return video_path  # Return video without audio if there's an error
+        msg = EmailMessage()
+        msg.set_content(f"Your OTP for Secure Quiz App is: {otp}")
+        msg['Subject'] = "Email Verification OTP - Secure Quiz App"
+        msg['From'] = "rajkumar.k0322@gmail.com"
+        msg['To'] = to_email
+
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login("rajkumar.k0322@gmail.com", "kcxf lzrq xnts xlng")
+        server.send_message(msg)
+        server.quit()
+        return True
     except Exception as e:
-        st.error(f"Error creating video: {e}")
-        return video_path  # Return video without audio if there's an error
+        st.error(f"Failed to send OTP: {e}")
+        return False
 
-class VideoProcessor(VideoTransformerBase):
-    def __init__(self):
-        self.recording = True
-        self.container = av.open(os.path.join(RECORDING_DIR, "quiz_recording.mp4"), mode="w")
-        self.stream = self.container.add_stream("h264")
+def text_to_speech(text, filename):
+    """Convert text to speech and return audio file path"""
+    tts = gTTS(text=text, lang='en')
+    audio_path = os.path.join(tempfile.gettempdir(), filename)
+    tts.save(audio_path)
+    return audio_path
 
-    def recv(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-        if self.recording:
-            packet = self.stream.encode(frame)
-            if packet:
-                self.container.mux(packet)
-        return av.VideoFrame.from_ndarray(img, format="bgr24")
-
-    def close(self):
-        self.container.close()
+def autoplay_audio(file_path: str):
+    """Autoplay audio in Streamlit"""
+    with open(file_path, "rb") as f:
+        data = f.read()
+        b64 = base64.b64encode(data).decode()
+        md = f"""
+            <audio autoplay>
+            <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+            </audio>
+            """
+        st.markdown(md, unsafe_allow_html=True)
 
 # UI Starts
-st.title("\U0001F393 Secure Quiz App with Webcam \U0001F4F5")
-menu = ["Register", "Login", "Take Quiz", "Change Password", "Professor Panel", "Professor Monitoring Panel", "View Recorded Video"]
+st.title("🎓 Secure Quiz App with Audio Questions 🎤")
+menu = ["Register", "Login", "Take Quiz", "Change Password", "Professor Panel", "Professor Monitoring Panel"]
 choice = st.sidebar.selectbox("Menu", menu)
 
 if choice == "Register":
@@ -251,7 +163,6 @@ if choice == "Register":
         if otp_entered == st.session_state.get('reg_otp'):
             username, password, role, email = st.session_state['reg_data']
             register_user(username, password, role, email)
-            # Clear registration data
             del st.session_state['reg_otp']
             del st.session_state['reg_data']
         else:
@@ -394,15 +305,30 @@ elif choice == "Take Quiz":
 
                 answers = {}
 
-                # Display video questions
+                # Display questions with audio
                 for idx, question in enumerate(QUESTIONS):
-                    video_file = question_videos[idx]
-                    st.video(video_file)
-                    ans = st.radio(f"Select your answer for Q{idx+1}:", 
+                    st.markdown(f"### Question {idx+1}")
+                    
+                    # Generate audio if not already generated
+                    if question["audio"] is None:
+                        question_text = f"Question {idx+1}: {question['question']}. Options are: " + ", ".join(question['options'])
+                        audio_path = text_to_speech(question_text, f"q{idx}.mp3")
+                        question["audio"] = audio_path
+                    
+                    # Play audio button
+                    if st.button(f"🔊 Play Question {idx+1}"):
+                        autoplay_audio(question["audio"])
+                    
+                    # Display question text
+                    st.write(question['question'])
+                    
+                    # Answer options
+                    ans = st.radio("Select your answer:", 
                                  question['options'], 
                                  key=f"q{idx}", 
                                  index=None)
                     answers[question['question']] = ans
+
                 submit_btn = st.button("Submit Quiz")
                 auto_submit_triggered = st.session_state.get("auto_submit", False)
 
@@ -416,9 +342,8 @@ elif choice == "Take Quiz":
                         time_taken = round(time.time() - st.session_state.quiz_start_time, 2)
 
                         new_row = pd.DataFrame([[username, hash_password(username), st.session_state.usn, st.session_state.section, score, time_taken, datetime.now()]],
-                                            columns=["Username", "Hashed_Password", "USN", "Section", "Score", "Time_Taken", "Timestamp"])
+                                               columns=["Username", "Hashed_Password", "USN", "Section", "Score", "Time_Taken", "Timestamp"])
 
-                        # Append to professor's CSV
                         if os.path.exists(PROF_CSV_FILE):
                             prof_df = pd.read_csv(PROF_CSV_FILE)
                             prof_df = pd.concat([prof_df, new_row], ignore_index=True)
@@ -426,7 +351,6 @@ elif choice == "Take Quiz":
                             prof_df = new_row
                         prof_df.to_csv(PROF_CSV_FILE, index=False)
 
-                        # Save to student section-wise CSV
                         section_file = f"{st.session_state.section}_results.csv"
                         if os.path.exists(section_file):
                             sec_df = pd.read_csv(section_file)
@@ -435,13 +359,15 @@ elif choice == "Take Quiz":
                             sec_df = new_row
                         sec_df.to_csv(section_file, index=False)
 
-                        # Update attempts
                         if record:
                             cur.execute("UPDATE quiz_attempts SET attempt_count = attempt_count + 1 WHERE username = ?", (username,))
                         else:
                             cur.execute("INSERT INTO quiz_attempts (username, attempt_count) VALUES (?, ?)", (username, 1))
                         conn.commit()
                         conn.close()
+
+                        st.success(f"Quiz submitted successfully! Your score is {score}/{len(QUESTIONS)}.")
+                        st.session_state.quiz_submitted = Tru
 
                         # Send results via email
                         conn = get_db_connection()
