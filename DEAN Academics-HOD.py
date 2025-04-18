@@ -65,46 +65,30 @@ def get_db_connection():
         st.error(f"Database connection error: {e}")
         raise
 
-def initialize_database():
+def migrate_database():
     conn = None
     try:
         conn = get_db_connection()
         
-        # Create users table with all required columns
-        conn.execute('''CREATE TABLE IF NOT EXISTS users (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        username TEXT UNIQUE,
-                        password TEXT,
-                        role TEXT DEFAULT 'student',
-                        email TEXT)''')
+        # Add email column if it doesn't exist
+        conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
         
-        # Add any missing columns (for existing tables)
-        cursor = conn.execute("PRAGMA table_info(users)")
-        columns = [column[1] for column in cursor.fetchall()]
-        
-        if 'email' not in columns:
-            conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
-        
-        if 'role' not in columns:
+        # Add role column if it doesn't exist
+        try:
             conn.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'student'")
-        
-        # Create other tables
-        conn.execute('''CREATE TABLE IF NOT EXISTS password_changes (
-                        username TEXT PRIMARY KEY,
-                        change_count INTEGER DEFAULT 0)''')
-        conn.execute('''CREATE TABLE IF NOT EXISTS quiz_attempts (
-                        username TEXT PRIMARY KEY,
-                        attempt_count INTEGER DEFAULT 0)''')
-        
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+            
         conn.commit()
+        st.success("Database migration completed successfully!")
     except sqlite3.Error as e:
-        st.error(f"Database initialization error: {str(e)}")
+        st.error(f"Database migration error: {str(e)}")
     finally:
         if conn:
             conn.close()
 
-# Initialize the database when the app starts
-initialize_database()
+# Call this function once (you can remove it after)
+migrate_database()
 
 # Password hashing
 def hash_password(password):
@@ -129,6 +113,7 @@ def register_user(username, password, role, email):
         )
 
         conn.commit()
+        st.success("Registration successful! Please login.")
         return True
         
     except sqlite3.Error as e:
