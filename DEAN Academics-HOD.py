@@ -828,53 +828,40 @@ Quiz App Team""")
 
 elif choice == "Professor Monitoring Panel":
     if not st.session_state.get('prof_verified', False):
-        secret_key = st.text_input("Enter Professor Secret Key to continue", type="password")
+        secret_key = st.text_input("Enter Professor Secret Key", type="password")
         
-        if st.button("Verify Key"):
+        if st.button("Verify"):
             if secret_key == PROFESSOR_SECRET_KEY:
                 st.session_state.prof_verified = True
                 st.rerun()
             else:
-                st.error("❌ Invalid secret key! Access denied.")
+                st.error("Access Denied: Invalid Key")
     else:
-        # Auto-refresh every 5 seconds
-        st_autorefresh(interval=5000, key="monitor_refresh")
+        # Auto-refresh every 3 seconds
+        st_autorefresh(interval=3000, key="monitor_refresh")
         
-        st.header("📡 Live Monitoring Dashboard")
-        st.info("Monitoring students currently taking the quiz")
+        st.header("🔍 Live Student Monitor")
+        st.caption("Real-time tracking of active quiz sessions")
         
-        # Load active students from JSON
+        # Load active students
         try:
-            if os.path.exists(ACTIVE_FILE):
-                with open(ACTIVE_FILE, "r") as f:
-                    active_students = json.load(f)
-            else:
-                active_students = []
+            active_students = get_live_students()  # Uses your existing function
         except Exception as e:
-            st.error(f"Error loading active students: {e}")
+            st.error("⚠️ Error loading data")
             active_students = []
         
         if not active_students:
-            st.warning("🕒 No active students at the moment.")
+            st.markdown("""
+            <div style='text-align: center; padding: 20px; border-radius: 10px; background: #f0f2f6;'>
+                <p style='font-size: 18px; color: #555;'>🕒 No active quiz sessions</p>
+            </div>
+            """, unsafe_allow_html=True)
         else:
-            st.success(f"🟢 Active Students ({len(active_students)}):")
+            st.markdown(f"**Active Students ({len(active_students)}):**")
             for student in active_students:
-                st.write(f"👤 {student}")
+                st.markdown(f"- 🧑‍💻 {student}")
         
-        # Recent submissions (optional)
-        st.markdown("---")
-        st.markdown("### Recent Quiz Submissions")
-        if os.path.exists(PROF_CSV_FILE):
-            try:
-                df = pd.read_csv(PROF_CSV_FILE)
-                recent_submissions = df.sort_values("Timestamp", ascending=False).head(5)
-                st.dataframe(recent_submissions)
-            except Exception as e:
-                st.error(f"Error loading submissions: {e}")
-        else:
-            st.warning("No quiz submissions yet.")
-        
-        if st.button("🚪 Exit Monitoring Panel"):
+        if st.button("Exit Monitor"):
             st.session_state.prof_verified = False
             st.rerun()
 
