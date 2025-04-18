@@ -476,7 +476,7 @@ elif choice == "Take Quiz":
                             )
                         except Exception as e:
                             st.success("Your Under Professor Monitor Pannel, MalPractice")
-                            video_file = st.file_uploader("Upload recording instead", type=["mp4", "mov"])
+                           
                             
 
                     # VIDEO QUESTIONS SECTION
