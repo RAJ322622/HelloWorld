@@ -484,7 +484,7 @@ elif choice == "Take Quiz":
                                             "height": 480,
                                             "frameRate": 15  # Lower frame rate for efficiency
                                         },
-                                        "audio": False  # Disable audio to reduce processing
+                                        "audio": True  # Disable audio to reduce processing
                                     },
                                     video_processor_factory=VideoProcessor,
                                     async_processing=True,  # Enable async processing for better performance
@@ -501,15 +501,9 @@ elif choice == "Take Quiz":
                                     
                         except Exception as e:
                             # Fallback option if webcam fails
-                            st.warning("Live camera unavailable in this environment")
                             st.info("You're still being monitored through alternative methods")
                             
-                            # Upload fallback option
-                            video_file = st.file_uploader("Upload your recording instead", type=["mp4", "mov"])
-                            if video_file:
-                                with open(os.path.join(RECORDING_DIR, "uploaded_recording.mp4"), "wb") as f:
-                                    f.write(video_file.getbuffer())
-                                st.success("Recording uploaded successfully")
+                            
                                                
                             
 
