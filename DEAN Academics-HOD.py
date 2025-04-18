@@ -21,6 +21,8 @@ import shutil
 import tempfile
 from streamlit.runtime.scriptrunner import RerunData
 from streamlit.runtime.scriptrunner import get_script_run_ctx
+from streamlit.runtime.scriptrunner import RerunException  # Add this import at the top
+
 
 # Constants
 EMAIL_SENDER = "rajkumar.k0322@gmail.com"
@@ -552,16 +554,15 @@ elif choice == "Take Quiz":
                                 },
                                 video_processor_factory=VideoProcessor,
                                 rtc_configuration={
-                                    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+                                    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}
                                 },
-                                async_processing=True,
-                                desired_playing_state=True
+                                async_processing=True
                             )
                             
                             if webrtc_ctx and not webrtc_ctx.state.playing:
                                 st.warning("⚠️ Camera is loading... Please allow camera access")
                                 time.sleep(1)
-                                rerun()  # Use our new rerun function instead
+                                st.experimental_rerun()  # This will be gracefully ignored if not available
                                 
                         except Exception as e:
                             st.warning(f"⚠️ Camera stream issue: {str(e)}")
@@ -571,13 +572,17 @@ elif choice == "Take Quiz":
                             img_file_buffer = st.camera_input("Take a verification photo")
                             if img_file_buffer is not None:
                                 try:
-                                    os.makedirs(RECORDING_DIR, exist_ok=True)
+                                    # Create professor directory if it doesn't exist
+                                    prof_dir = os.path.join(st.session_state.prof_dir, "student_photos")
+                                    os.makedirs(prof_dir, exist_ok=True)
+                                    
+                                    # Save photo with student info
                                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                    img_path = os.path.join(RECORDING_DIR, f"photo_{timestamp}.jpg")
+                                    img_path = os.path.join(prof_dir, f"{st.session_state.username}_{st.session_state.usn}_{timestamp}.jpg")
                                     
                                     with open(img_path, "wb") as f:
                                         f.write(img_file_buffer.getvalue())
-                                    st.success("✅ Verification photo saved!")
+                                    st.success("✅ Verification photo saved for professor review!")
                                 except Exception as e:
                                     st.error(f"Failed to save photo: {str(e)}")
 
