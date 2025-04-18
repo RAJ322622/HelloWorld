@@ -82,7 +82,7 @@ def migrate_database():
         conn.commit()
         st.success("Database migration completed successfully!")
     except sqlite3.Error as e:
-        st.success(f"Database migration Has Successfull:")
+        pass
     finally:
         if conn:
             conn.close()
