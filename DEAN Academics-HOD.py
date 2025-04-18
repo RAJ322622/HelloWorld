@@ -40,7 +40,7 @@ def send_email_otp(to_email, otp):
 # Ensure directories exist
 VIDEO_DIR = os.path.join(tempfile.gettempdir(), "videos")
 RECORDING_DIR = tempfile.mkdtemp()
-CSV_FILE = os.path.join(tempfile.gettempdir(), "quiz_results.cs
+CSV_FILE = os.path.join(tempfile.gettempdir(), "quiz_results.cs")
 ACTIVE_FILE = "active_students.json"
 # Create directories if they don't exist
 os.makedirs(VIDEO_DIR, exist_ok=True)
