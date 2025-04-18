@@ -13,9 +13,9 @@ import av
 from datetime import datetime
 
 # Ensure directories exist
-VIDEO_DIR = "/content/videos"
-RECORDING_DIR = "recordings"
-CSV_FILE = "quiz_results.csv"
+VIDEO_DIR = os.path.join(tempfile.gettempdir(), "videos")
+RECORDING_DIR = os.path.join(tempfile.gettempdir(), "recordings")
+CSV_FILE = os.path.join(tempfile.gettempdir(), "quiz_results.csv")
 
 os.makedirs(VIDEO_DIR, exist_ok=True)
 os.makedirs(RECORDING_DIR, exist_ok=True)
