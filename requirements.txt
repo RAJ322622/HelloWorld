@@ -1,17 +1,9 @@
 streamlit==1.32.0
 streamlit-webrtc==0.47.0
-streamlit-autorefresh==0.4.1
-firebase-admin==6.2.0
-google-cloud-storage==2.14.0
-gtts==2.4.0
-opencv-python-headless==4.9.0.80
-pandas==2.2.0
+streamlit-autorefresh==1.0.1  # or remove this line if not needed
+gTTS==2.4.0
+moviepy==1.0.3
 numpy==1.26.4
-pytz==2024.1
-imageio==2.34.0
-imageio-ffmpeg==0.4.9
-decorator==5.1.1
-tqdm==4.66.2
-Pillow==10.2.0
-pymongo==4.6.1  # For MongoDB alternative to SQLite
-imageio.v2
+opencv-python==4.9.0.80
+pandas==2.2.1
+sqlite3==0.0.1  # This is usually included in Python standard library
