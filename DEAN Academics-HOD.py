@@ -841,77 +841,112 @@ elif choice == "Professor Monitoring Panel":
         st.header("\U0001F4E1 Live Monitoring Dashboard")
         st.info("Monitoring students currently taking the quiz")
         
-        live_students = get_live_students()
-        if not live_students:
+        # Get active students from the JSON file
+        try:
+            if os.path.exists(ACTIVE_FILE):
+                with open(ACTIVE_FILE, "r") as f:
+                    active_students = json.load(f)
+            else:
+                active_students = []
+        except Exception as e:
+            st.error(f"Error loading active students: {str(e)}")
+            active_students = []
+        
+        if not active_students:
             st.write("No active students at the moment.")
         else:
-            st.write(f"Active students ({len(live_students)}):")
-            for student in live_students:
+            st.write(f"Active students ({len(active_students)}):")
+            for student in active_students:
                 st.write(f"- {student}")
                 
             st.markdown("---")
             st.markdown("### Recent Quiz Submissions")
             if os.path.exists(PROF_CSV_FILE):
-                df = pd.read_csv(PROF_CSV_FILE)
-                recent_submissions = df.sort_values("Timestamp", ascending=False).head(5)
-                st.dataframe(recent_submissions)
+                try:
+                    df = pd.read_csv(PROF_CSV_FILE)
+                    recent_submissions = df.sort_values("Timestamp", ascending=False).head(5)
+                    st.dataframe(recent_submissions)
+                except Exception as e:
+                    st.error(f"Error loading submissions: {str(e)}")
             else:
                 st.warning("No quiz submissions yet.")
 
-
+        if st.button("Exit Monitoring Panel"):
+            st.session_state.prof_verified = False
+            st.rerun()
 
 elif choice == "View Recordings":
-    st.subheader("Recorded Sessions")
-    
-    tab1, tab2 = st.tabs(["Videos", "Photos"])
-    
-    with tab1:
-        st.markdown("### Video Recordings")
-        video_files = [f for f in os.listdir(RECORDING_DIR) if f.endswith(".mp4")]
+    if not st.session_state.get('recordings_verified', False):
+        secret_key = st.text_input("Enter Professor Secret Key to view recordings", type="password")
         
-        if video_files:
-            selected_video = st.selectbox("Select a video recording", video_files)
-            video_path = os.path.join(RECORDING_DIR, selected_video)
-            st.video(video_path)
-            
-            if st.button("Delete Selected Video"):
-                try:
-                    os.remove(video_path)
-                    st.success("Video deleted successfully!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error deleting video: {str(e)}")
-        else:
-            st.warning("No video recordings available.")
-    
-    with tab2:
-        st.markdown("### Student Verification Photos")
-        photo_files = [f for f in os.listdir(PHOTO_DIR) if f.endswith(".jpg")]
+        if st.button("Verify Key"):
+            if secret_key == PROFESSOR_SECRET_KEY:
+                st.session_state.recordings_verified = True
+                st.rerun()
+            else:
+                st.error("Invalid secret key! Access denied.")
+    else:
+        st.subheader("Recorded Sessions")
         
-        if photo_files:
-            selected_photo = st.selectbox("Select a photo", photo_files)
-            photo_path = os.path.join(PHOTO_DIR, selected_photo)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.image(photo_path, caption=selected_photo, use_column_width=True)
-            
-            with col2:
-                st.write("Photo Details:")
-                parts = selected_photo.split('_')
-                if len(parts) >= 3:
-                    st.write(f"USN: {parts[0]}")
-                    st.write(f"Section: {parts[1]}")
-                    st.write(f"Timestamp: {'_'.join(parts[2:]).replace('.jpg', '')}")
+        tab1, tab2 = st.tabs(["Videos", "Photos"])
+        
+        with tab1:
+            st.markdown("### Video Recordings")
+            try:
+                video_files = [f for f in os.listdir(RECORDING_DIR) if f.endswith(".mp4")]
+                
+                if video_files:
+                    selected_video = st.selectbox("Select a video recording", video_files)
+                    video_path = os.path.join(RECORDING_DIR, selected_video)
+                    st.video(video_path)
+                    
+                    if st.button("Delete Selected Video"):
+                        try:
+                            os.remove(video_path)
+                            st.success("Video deleted successfully!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error deleting video: {str(e)}")
                 else:
-                    st.write("Unable to extract photo details.")
+                    st.warning("No video recordings available.")
+            except Exception as e:
+                st.error(f"Error accessing video recordings: {str(e)}")
+        
+        with tab2:
+            st.markdown("### Student Verification Photos")
+            try:
+                photo_files = [f for f in os.listdir(PHOTO_DIR) if f.endswith(".jpg")]
+                
+                if photo_files:
+                    selected_photo = st.selectbox("Select a photo", photo_files)
+                    photo_path = os.path.join(PHOTO_DIR, selected_photo)
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.image(photo_path, caption=selected_photo, use_column_width=True)
+                    
+                    with col2:
+                        st.write("Photo Details:")
+                        parts = selected_photo.split('_')
+                        if len(parts) >= 3:
+                            st.write(f"Username: {parts[0]}")
+                            st.write(f"USN: {parts[1]}")
+                            st.write(f"Timestamp: {'_'.join(parts[2:]).replace('.jpg', '')}")
+                        else:
+                            st.write("Unable to extract photo details.")
 
-                if st.button("Delete Selected Photo"):
-                    try:
-                        os.remove(photo_path)
-                        st.success("Photo deleted successfully!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error deleting photo: {str(e)}")
-        else:
-            st.warning("No student verification photos available.")
+                    if st.button("Delete Selected Photo"):
+                        try:
+                            os.remove(photo_path)
+                            st.success("Photo deleted successfully!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error deleting photo: {str(e)}")
+                else:
+                    st.warning("No student verification photos available.")
+            except Exception as e:
+                st.error(f"Error accessing photos: {str(e)}")
+
+        if st.button("Exit Recordings Panel"):
+            st.session_state.recordings_verified = False
+            st.rerun()
