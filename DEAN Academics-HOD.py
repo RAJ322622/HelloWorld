@@ -307,7 +307,7 @@ if choice == "Register":
         elif password != confirm_password:
             st.error("Passwords do not match!")
         else:
-            if register_user(username, password, "role", email):
+            if register_user(username, password, "student", email, role):
                 st.session_state.login_username = username
                 st.session_state.login_password = password
                 st.rerun()
