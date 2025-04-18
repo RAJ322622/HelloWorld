@@ -17,6 +17,10 @@ from email.message import EmailMessage
 import random
 import json
 from streamlit_autorefresh import st_autorefresh
+import shutil
+import tempfile
+from streamlit.runtime.scriptrunner import RerunData, RerunException
+from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 # Constants
 EMAIL_SENDER = "rajkumar.k0322@gmail.com"
@@ -294,6 +298,13 @@ def create_video(question_text, filename, audio_file):
     except Exception as e:
         st.error(f"Error creating video: {str(e)}")
         return None
+
+def rerun():
+    """Programmatically rerun the Streamlit app"""
+    ctx = get_script_run_ctx()
+    if ctx:
+        raise RerunException(RerunData())
+
 # Video Processor for Streamlit WebRTC with improved error handling
 
 class VideoProcessor(VideoProcessorBase):
@@ -301,33 +312,39 @@ class VideoProcessor(VideoProcessorBase):
         self.recording = True
         self.frames = []
         self.start_time = time.time()
+        self.last_save_time = time.time()
         
     def recv(self, frame):
         try:
             img = frame.to_ndarray(format="bgr24")
             
-            # Only record every 5th frame to reduce load
-            if self.recording and len(self.frames) % 5 == 0:
+            # Record at reduced frame rate (every 3rd frame)
+            if self.recording and len(self.frames) % 3 == 0:
                 self.frames.append(img)
                 
-            # Save recording every 30 seconds or when closing
-            if time.time() - self.start_time > 30:
+            # Auto-save every 20 seconds
+            current_time = time.time()
+            if current_time - self.last_save_time > 20 and self.frames:
                 self._save_recording()
-                self.start_time = time.time()
+                self.last_save_time = current_time
+                self.frames = []  # Clear buffer after saving
                 
             return av.VideoFrame.from_ndarray(img, format="bgr24")
         except Exception as e:
-            st.error(f"Error processing frame: {e}")
+            st.error(f"Camera error: {str(e)}")
             return frame
 
-    def _save_recording(self):
+   def _save_recording(self):
         if not self.frames:
             return
             
         try:
-            # Create video from frames
             height, width, _ = self.frames[0].shape
-            video_path = os.path.join(RECORDING_DIR, f"quiz_recording_{int(time.time())}.mp4")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            video_path = os.path.join(RECORDING_DIR, f"quiz_recording_{timestamp}.mp4")
+            
+            os.makedirs(RECORDING_DIR, exist_ok=True)
+            
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(video_path, fourcc, 10, (width, height))
             
@@ -335,15 +352,11 @@ class VideoProcessor(VideoProcessorBase):
                 out.write(frame)
             out.release()
             
-            # Clear frames buffer
-            self.frames = []
-            
         except Exception as e:
-            st.error(f"Error saving recording: {e}")
+            st.error(f"Failed to save recording: {str(e)}")
 
     def close(self):
         self._save_recording()
-
 # Streamlit UI
 st.title("🎥 Interactive Video Quiz 🎬")
 
@@ -524,7 +537,8 @@ elif choice == "Take Quiz":
                         st.session_state.camera_active = True
 
                     if st.session_state.camera_active and not st.session_state.quiz_submitted:
-                        st.markdown("<span style='color:red;'>\U0001F7E2 Webcam is ON</span>", unsafe_allow_html=True)
+                        st.markdown("<span style='color:red;'>📹 Webcam is ACTIVE</span>", unsafe_allow_html=True)
+                        
                         try:
                             webrtc_ctx = webrtc_streamer(
                                 key="quiz-camera",
@@ -538,24 +552,35 @@ elif choice == "Take Quiz":
                                     "audio": False
                                 },
                                 video_processor_factory=VideoProcessor,
-                                rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-                                async_processing=True
+                                rtc_configuration={
+                                    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+                                },
+                                async_processing=True,
+                                desired_playing_state=True
                             )
                             
-                            if not webrtc_ctx.state.playing:
-                                st.warning("Waiting for camera...")
+                            if webrtc_ctx and not webrtc_ctx.state.playing:
+                                st.warning("⚠️ Camera is loading... Please allow camera access")
+                                time.sleep(1)
+                                rerun()  # Use our new rerun function instead
                                 
                         except Exception as e:
-                            st.warning(f"Camera stream issue: {str(e)}")
-                            # Fallback to simple camera capture
-                            st.warning("Using fallback camera capture")
-                            img_file_buffer = st.camera_input("Take a picture")
-                            if img_file_buffer is not None:
-                                bytes_data = img_file_buffer.getvalue()
-                                cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
-                                # Save the image as proof
-                                cv2.imwrite(os.path.join(RECORDING_DIR, f"quiz_capture_{int(time.time())}.jpg"), cv2_img)
+                            st.warning(f"⚠️ Camera stream issue: {str(e)}")
+                            st.info("Using fallback photo capture...")
                             
+                            # Fallback to single photo capture
+                            img_file_buffer = st.camera_input("Take a verification photo")
+                            if img_file_buffer is not None:
+                                try:
+                                    os.makedirs(RECORDING_DIR, exist_ok=True)
+                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    img_path = os.path.join(RECORDING_DIR, f"photo_{timestamp}.jpg")
+                                    
+                                    with open(img_path, "wb") as f:
+                                        f.write(img_file_buffer.getvalue())
+                                    st.success("✅ Verification photo saved!")
+                                except Exception as e:
+                                    st.error(f"Failed to save photo: {str(e)}")
 
                     # VIDEO QUESTIONS SECTION
                     # In your Take Quiz section, update the video generation part:
