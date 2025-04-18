@@ -442,13 +442,15 @@ elif choice == "Login":
             st.error("Email not registered.")
 
     if 'reset_otp' in st.session_state and 'reset_email' in st.session_state:
-        st.markdown("### Reset Your Password")
-        entered_otp = st.text_input("Enter OTP to reset password", key="reset_otp_input")
-        new_password = st.text_input("New Password", type="password", key="reset_new_password")
-        confirm_password = st.text_input("Confirm New Password", type="password", key="reset_confirm_password")
+    st.markdown("### Reset Your Password")
+    entered_otp = st.text_input("Enter OTP to reset password", key="reset_otp_input")
+    username_verify = st.text_input("Enter your username to verify", key="reset_username_verify")
+    new_password = st.text_input("New Password", type="password", key="reset_new_password")
+    confirm_password = st.text_input("Confirm New Password", type="password", key="reset_confirm_password")
 
-        if st.button("Reset Password"):
-            if entered_otp == st.session_state.get('reset_otp'):
+    if st.button("Reset Password"):
+        if entered_otp == st.session_state.get('reset_otp'):
+            if username_verify == st.session_state.get('reset_user'):
                 if new_password == confirm_password:
                     conn = get_db_connection()
                     try:
@@ -473,9 +475,7 @@ elif choice == "Login":
                             
                             conn.commit()
                             
-                            
-                            
-                            st.success("Password reset successfully! Your credentials have been filled below. Click Login to continue.")
+                            st.success("Password reset successfully! Please login with your new credentials.")
                             
                             for key in ['reset_otp', 'reset_email', 'reset_user']:
                                 if key in st.session_state:
@@ -491,7 +491,9 @@ elif choice == "Login":
                 else:
                     st.error("Passwords do not match. Please try again.")
             else:
-                st.error("Incorrect OTP. Please try again.")
+                st.error("Username does not match the account being reset.")
+        else:
+            st.error("Incorrect OTP. Please try again.")
 
 elif choice == "Take Quiz":
     if not st.session_state.logged_in:
