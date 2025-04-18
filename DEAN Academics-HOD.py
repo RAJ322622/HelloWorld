@@ -9,7 +9,6 @@ import cv2
 import numpy as np
 import moviepy.editor as mp
 from gtts import gTTS
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoProcessorBase
 import av
 from datetime import datetime
 import smtplib
@@ -18,10 +17,6 @@ import random
 import json
 from streamlit_autorefresh import st_autorefresh
 import shutil
-import tempfile
-from streamlit.runtime.scriptrunner import RerunData
-from streamlit.runtime.scriptrunner import get_script_run_ctx
-from streamlit.runtime.scriptrunner import RerunException
 
 # Constants
 EMAIL_SENDER = "rajkumar.k0322@gmail.com"
@@ -34,13 +29,11 @@ PROF_CSV_FILE = "professor_results.csv"
 
 # Use tempfile for all directories
 VIDEO_DIR = os.path.join(tempfile.gettempdir(), "videos")
-RECORDING_DIR = os.path.join(tempfile.gettempdir(), "recordings")
 PHOTO_DIR = os.path.join(tempfile.gettempdir(), "student_photos")
 CSV_FILE = os.path.join(tempfile.gettempdir(), "quiz_results.csv")
 
 # Create directories safely
 os.makedirs(VIDEO_DIR, exist_ok=True)
-os.makedirs(RECORDING_DIR, exist_ok=True)
 os.makedirs(PHOTO_DIR, exist_ok=True)
 
 # Initialize session state
@@ -50,10 +43,6 @@ if 'username' not in st.session_state:
     st.session_state.username = ""
 if 'role' not in st.session_state:
     st.session_state.role = ""
-if 'camera_active' not in st.session_state:
-    st.session_state.camera_active = False
-if 'prof_verified' not in st.session_state:
-    st.session_state.prof_verified = False
 if 'quiz_submitted' not in st.session_state:
     st.session_state.quiz_submitted = False
 if 'usn' not in st.session_state:
@@ -76,28 +65,20 @@ def migrate_database():
     conn = None
     try:
         conn = get_db_connection()
-        
-        # Add email column if it doesn't exist
         conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
-        
-        # Add role column if it doesn't exist
         try:
             conn.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'student'")
         except sqlite3.OperationalError:
             pass  # Column already exists
-            
         conn.commit()
-        st.success("Database migration completed successfully!")
     except sqlite3.Error as e:
         pass
     finally:
         if conn:
             conn.close()
 
-# Call this function once (you can remove it after)
 migrate_database()
 
-# Password hashing
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
@@ -106,19 +87,15 @@ def register_user(username, password, role, email):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        # Check if username already exists
         cursor.execute("SELECT username FROM users WHERE username = ?", (username,))
         if cursor.fetchone():
             st.error("Username already exists!")
             return False
             
-        # Insert new user
         cursor.execute(
             "INSERT INTO users (username, password, role, email) VALUES (?, ?, ?, ?)", 
             (username, hash_password(password), role, email)
         )
-
         conn.commit()
         st.success("Registration successful! Please login.")
         return True
@@ -227,20 +204,16 @@ def generate_audio(question_text, filename):
 def create_video(question_text, filename, audio_file):
     try:
         video_path = os.path.join(VIDEO_DIR, filename)
-        
-        # Create directory if it doesn't exist
         os.makedirs(VIDEO_DIR, exist_ok=True)
         
-        # Check if video already exists
         if os.path.exists(video_path):
             return video_path
 
-        # Create temporary directory for processing
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_video_path = os.path.join(temp_dir, "temp_video.mp4")
             temp_audio_path = os.path.join(temp_dir, "temp_audio.mp3")
             
-            # Step 1: Create silent video
+            # Create silent video
             width, height = 640, 480
             img = np.full((height, width, 3), (255, 223, 186), dtype=np.uint8)
             font = cv2.FONT_HERSHEY_SIMPLEX
@@ -248,7 +221,7 @@ def create_video(question_text, filename, audio_file):
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(temp_video_path, fourcc, 10, (width, height))
 
-            for _ in range(50):  # 5 seconds of video at 10fps
+            for _ in range(50):
                 img_copy = img.copy()
                 text_size = cv2.getTextSize(question_text, font, 1, 2)[0]
                 text_x = (width - text_size[0]) // 2
@@ -257,31 +230,26 @@ def create_video(question_text, filename, audio_file):
                 out.write(img_copy)
             out.release()
 
-            # Step 2: Copy audio to temp location
             shutil.copy(audio_file, temp_audio_path)
 
-            # Step 3: Combine video and audio
             try:
                 video_clip = mp.VideoFileClip(temp_video_path)
                 audio_clip = mp.AudioFileClip(temp_audio_path)
                 
-                # Ensure audio duration matches video
                 if audio_clip.duration > video_clip.duration:
                     audio_clip = audio_clip.subclip(0, video_clip.duration)
                 
                 final_video = video_clip.set_audio(audio_clip)
                 
-                # Write final video directly to target location
                 final_video.write_videofile(
                     video_path,
                     codec='libx264',
                     fps=10,
                     audio_codec='aac',
                     threads=4,
-                    logger=None  # Disable verbose output
+                    logger=None
                 )
                 
-                # Explicitly close clips to release resources
                 video_clip.close()
                 audio_clip.close()
                 final_video.close()
@@ -296,69 +264,10 @@ def create_video(question_text, filename, audio_file):
         st.error(f"Error creating video: {str(e)}")
         return None
 
-def rerun():
-    """Programmatically rerun the Streamlit app"""
-    ctx = get_script_run_ctx()
-    if ctx:
-        raise RerunException(RerunData())
-
-class VideoProcessor(VideoProcessorBase):
-    def __init__(self):
-        self.recording = True
-        self.frames = []
-        self.start_time = time.time()
-        self.last_save_time = time.time()
-        
-    def recv(self, frame):
-        try:
-            img = frame.to_ndarray(format="bgr24")
-            
-            # Record at reduced frame rate (every 3rd frame)
-            if self.recording and len(self.frames) % 3 == 0:
-                self.frames.append(img)
-                
-            # Auto-save every 20 seconds
-            current_time = time.time()
-            if current_time - self.last_save_time > 20 and self.frames:
-                self._save_recording()
-                self.last_save_time = current_time
-                self.frames = []  # Clear buffer after saving
-                
-            return av.VideoFrame.from_ndarray(img, format="bgr24")
-        except Exception as e:
-            st.error(f"Camera error: {str(e)}")
-            return frame
-            
-    def _save_recording(self):
-        if not self.frames:
-            return
-            
-        try:
-            height, width, _ = self.frames[0].shape
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            video_path = os.path.join(RECORDING_DIR, f"quiz_recording_{timestamp}.mp4")
-            
-            os.makedirs(RECORDING_DIR, exist_ok=True)
-            
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(video_path, fourcc, 10, (width, height))
-            
-            for frame in self.frames:
-                out.write(frame)
-            out.release()
-            
-        except Exception as e:
-            st.error(f"Failed to save recording: {str(e)}")
-
-    def close(self):
-        self._save_recording()
-
 # Streamlit UI
 st.title("🎥 Interactive Video Quiz 🎬")
-
-# UI Starts
-st.title("\U0001F393 Secure Quiz App with Webcam \U0001F4F5")
-menu = ["Register", "Login", "Take Quiz", "Change Password", "Professor Panel", "Professor Monitoring Panel", "View Recordings"]
+st.title("\U0001F393 Secure Quiz App \U0001F4F5")
+menu = ["Register", "Login", "Take Quiz", "Change Password", "Professor Panel", "Professor Monitoring Panel", "View Photos"]
 choice = st.sidebar.selectbox("Menu", menu)
 
 if choice == "Register":
@@ -516,55 +425,23 @@ elif choice == "Take Quiz":
                         mins, secs = divmod(time_left, 60)
                         st.info(f"⏳ Time left: {mins:02d}:{secs:02d}")
 
-                    answers = {}
-
-                    if not st.session_state.quiz_submitted and not st.session_state.camera_active:
-                        add_active_student(username)
-                        st.session_state.camera_active = True
-
-                    if st.session_state.camera_active and not st.session_state.quiz_submitted:
-                        st.markdown("<span style='color:red;'>📹 Webcam is ACTIVE</span>", unsafe_allow_html=True)
-                        
+                    # Take verification photo
+                    st.markdown("### Verification Photo")
+                    img_file_buffer = st.camera_input("Take a verification photo")
+                    
+                    if img_file_buffer is not None:
                         try:
-                            webrtc_ctx = webrtc_streamer(
-                                key="quiz-camera",
-                                mode=WebRtcMode.SENDRECV,
-                                media_stream_constraints={
-                                    "video": {
-                                        "width": {"ideal": 640},
-                                        "height": {"ideal": 480},
-                                        "frameRate": {"ideal": 15}
-                                    },
-                                    "audio": False
-                                },
-                                video_processor_factory=VideoProcessor,
-                                rtc_configuration={
-                                    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
-                                },
-                                async_processing=True
-                            )
+                            os.makedirs(PHOTO_DIR, exist_ok=True)
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            img_path = os.path.join(PHOTO_DIR, f"{username}_{st.session_state.usn}_{timestamp}.jpg")
                             
-                            if webrtc_ctx and not webrtc_ctx.state.playing:
-                                st.warning("⚠️ Camera is loading... Please allow camera access")
-                                time.sleep(1)
-                                st.rerun()
-                                
+                            with open(img_path, "wb") as f:
+                                f.write(img_file_buffer.getvalue())
+                            st.success("✅ Verification photo saved!")
                         except Exception as e:
-                            st.info("Using fallback photo capture...")
-                            
-                            img_file_buffer = st.camera_input("Take a verification photo")
-                            if img_file_buffer is not None:
-                                try:
-                                    os.makedirs(PHOTO_DIR, exist_ok=True)
-                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                    img_path = os.path.join(PHOTO_DIR, f"{st.session_state.username}_{st.session_state.usn}_{timestamp}.jpg")
-                                    
-                                    with open(img_path, "wb") as f:
-                                        f.write(img_file_buffer.getvalue())
-                                    st.success("✅ Verification photo saved!")
-                                except Exception as e:
-                                    st.error(f"Failed to save photo: {str(e)}")
+                            st.error(f"Failed to save photo: {str(e)}")
 
+                    answers = {}
                     for idx, question in enumerate(QUESTIONS):
                         question_text = question["question"]
     
@@ -594,18 +471,7 @@ elif choice == "Take Quiz":
                         ans = st.radio("Select your answer:", question['options'], key=f"q{idx}", index=None)
                         answers[question['question']] = ans
 
-                    # In the Take Quiz section, modify the submission logic:
-
-                    # Replace the current submit button code with this:
-                    if not st.session_state.quiz_submitted:
-                        submit_btn = st.button("Submit Quiz")
-                    else:
-                        st.warning("Quiz already submitted!")
-                        submit_btn = False
-                    
-                    auto_submit_triggered = st.session_state.get("auto_submit", False)
-                    
-                    if (submit_btn or auto_submit_triggered) and not st.session_state.quiz_submitted:
+                    if st.button("Submit Quiz", key="submit_quiz"):
                         if None in answers.values():
                             st.error("Please answer all questions before submitting the quiz.")
                         else:
@@ -655,11 +521,11 @@ elif choice == "Take Quiz":
                                         msg = EmailMessage()
                                         msg.set_content(f"""Dear {username},
                                         
-                    You have successfully submitted your quiz.
-                    Score: {score}/{len(QUESTIONS)}
-                    Time Taken: {time_taken} seconds
-                    
-                    Thank you for participating.""")
+You have successfully submitted your quiz.
+Score: {score}/{len(QUESTIONS)}
+Time Taken: {time_taken} seconds
+
+Thank you for participating.""")
                                         msg['Subject'] = "Quiz Submission Confirmation"
                                         msg['From'] = EMAIL_SENDER
                                         msg['To'] = email_result[0]
@@ -671,24 +537,11 @@ elif choice == "Take Quiz":
                                     except Exception as e:
                                         st.error(f"Result email failed: {e}")
                     
-                                # Update session state and remove from active list
                                 st.session_state.quiz_submitted = True
-                                st.session_state.camera_active = False
-                                remove_active_student(username)  # Ensure this happens
-                                
                                 st.success(f"Quiz submitted successfully! Your score is {score}/{len(QUESTIONS)}")
                                 st.balloons()
-                                
-                                # Force immediate UI update
                                 st.rerun()
                                 
-                            except Exception as e:
-                                st.error(f"Error saving results: {str(e)}")
-                                # Ensure we still remove from active list even if other operations fail
-                                remove_active_student(username)
-                                st.session_state.quiz_submitted = True
-                                st.session_state.camera_active = False
-                                remove_active_student(username)
                             except Exception as e:
                                 st.error(f"Error saving results: {str(e)}")
             except sqlite3.Error as e:
@@ -900,58 +753,34 @@ elif choice == "Professor Monitoring Panel":
             else:
                 st.warning("No quiz submissions yet.")
 
-elif choice == "View Recordings":
-    st.subheader("Recorded Sessions")
+elif choice == "View Photos":
+    st.subheader("Student Verification Photos")
+    photo_files = [f for f in os.listdir(PHOTO_DIR) if f.endswith(".jpg")]
     
-    tab1, tab2 = st.tabs(["Videos", "Photos"])
-    
-    with tab1:
-        st.markdown("### Video Recordings")
-        video_files = [f for f in os.listdir(RECORDING_DIR) if f.endswith(".mp4")]
+    if photo_files:
+        selected_photo = st.selectbox("Select a photo", photo_files)
+        photo_path = os.path.join(PHOTO_DIR, selected_photo)
         
-        if video_files:
-            selected_video = st.selectbox("Select a video recording", video_files)
-            video_path = os.path.join(RECORDING_DIR, selected_video)
-            st.video(video_path)
-            
-            if st.button("Delete Selected Video"):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.image(photo_path, caption=selected_photo, use_column_width=True)
+        
+        with col2:
+            st.write("Photo Details:")
+            parts = selected_photo.split('_')
+            if len(parts) >= 3:
+                st.write(f"Username: {parts[0]}")
+                st.write(f"USN: {parts[1]}")
+                st.write(f"Timestamp: {'_'.join(parts[2:]).replace('.jpg', '')}")
+            else:
+                st.write("Unable to extract photo details.")
+
+            if st.button("Delete Selected Photo"):
                 try:
-                    os.remove(video_path)
-                    st.success("Video deleted successfully!")
+                    os.remove(photo_path)
+                    st.success("Photo deleted successfully!")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error deleting video: {str(e)}")
-        else:
-            st.warning("No video recordings available.")
-    
-    with tab2:
-        st.markdown("### Student Verification Photos")
-        photo_files = [f for f in os.listdir(PHOTO_DIR) if f.endswith(".jpg")]
-        
-        if photo_files:
-            selected_photo = st.selectbox("Select a photo", photo_files)
-            photo_path = os.path.join(PHOTO_DIR, selected_photo)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.image(photo_path, caption=selected_photo, use_column_width=True)
-            
-            with col2:
-                st.write("Photo Details:")
-                parts = selected_photo.split('_')
-                if len(parts) >= 3:
-                    st.write(f"USN: {parts[0]}")
-                    st.write(f"Section: {parts[1]}")
-                    st.write(f"Timestamp: {'_'.join(parts[2:]).replace('.jpg', '')}")
-                else:
-                    st.write("Unable to extract photo details.")
-
-                if st.button("Delete Selected Photo"):
-                    try:
-                        os.remove(photo_path)
-                        st.success("Photo deleted successfully!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error deleting photo: {str(e)}")
-        else:
-            st.warning("No student verification photos available.")
+                    st.error(f"Error deleting photo: {str(e)}")
+    else:
+        st.warning("No student verification photos available.")
