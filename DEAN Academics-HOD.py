@@ -547,7 +547,7 @@ elif choice == "Take Quiz":
                             if webrtc_ctx and not webrtc_ctx.state.playing:
                                 st.warning("⚠️ Camera is loading... Please allow camera access")
                                 time.sleep(1)
-                                st.experimental_rerun()
+                                st.rerun()
                                 
                         except Exception as e:
                             st.warning(f"⚠️ Camera stream issue: {str(e)}")
