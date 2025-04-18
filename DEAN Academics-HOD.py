@@ -473,8 +473,7 @@ elif choice == "Login":
                             
                             conn.commit()
                             
-                            st.session_state.login_username = st.session_state['reset_user']
-                            st.session_state.login_password = new_password
+                            
                             
                             st.success("Password reset successfully! Your credentials have been filled below. Click Login to continue.")
                             
