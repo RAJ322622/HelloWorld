@@ -313,8 +313,8 @@ if choice == "Register":
     otp_entered = st.text_input("Enter OTP")
     if st.button("Verify and Register"):
         if otp_entered == st.session_state.get('reg_otp'):
-            username, password, email = st.session_state['reg_data']
-            register_user(username, password, email)
+            username,password,email = st.session_state['reg_data']
+            register_user(username,password,email)
             # Clear registration data
             del st.session_state['reg_otp']
             del st.session_state['reg_data']
