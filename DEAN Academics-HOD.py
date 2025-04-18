@@ -189,28 +189,33 @@ def send_email_otp(to_email, otp):
         return False
 
 def add_active_student(username):
+    """Adds student to active list"""
     try:
-        data = []
+        active = []
         if os.path.exists(ACTIVE_FILE):
             with open(ACTIVE_FILE, "r") as f:
-                data = json.load(f)
-        if username not in data:
-            data.append(username)
+                active = json.load(f)
+        
+        if username not in active:
+            active.append(username)
             with open(ACTIVE_FILE, "w") as f:
-                json.dump(data, f)
+                json.dump(active, f)
     except Exception as e:
-        st.error(f"Error adding active student: {str(e)}")
+        st.error(f"Error adding student: {str(e)}")
 
 def remove_active_student(username):
+    """Removes student from active list"""
     try:
         if os.path.exists(ACTIVE_FILE):
             with open(ACTIVE_FILE, "r") as f:
-                data = json.load(f)
-            data = [u for u in data if u != username]
+                active = json.load(f)
+            
+            active = [u for u in active if u != username]
+            
             with open(ACTIVE_FILE, "w") as f:
-                json.dump(data, f)
+                json.dump(active, f)
     except Exception as e:
-        st.error(f"Error removing active student: {str(e)}")
+        st.error(f"Error removing student: {str(e)}")
 
 def get_live_students():
     """Returns list of active students from JSON file"""
@@ -498,7 +503,9 @@ elif choice == "Take Quiz":
         section = st.text_input("Enter your Section")
         st.session_state.usn = usn.strip().upper()
         st.session_state.section = section.strip().upper()
-
+        if "quiz_active" not in st.session_state:
+            add_active_student(st.session_state.username)  # <-- ADD THIS LINE
+            st.session_state.quiz_active = True
         if usn and section:
             conn = None
             try:
@@ -572,7 +579,8 @@ elif choice == "Take Quiz":
                         ans = st.radio("Select your answer:", question['options'], key=f"q{idx}", index=None)
                         answers[question['question']] = ans
 
-                    if st.button("Submit Quiz", key="submit_quiz"):
+                    if st.button("Submit Quiz"):
+                        remove_active_student(st.session_state.username)
                         if None in answers.values():
                             st.error("Please answer all questions before submitting the quiz.")
                         else:
@@ -826,42 +834,27 @@ Quiz App Team""")
 elif choice == "Professor Monitoring Panel":
     if not st.session_state.get('prof_verified', False):
         secret_key = st.text_input("Enter Professor Secret Key", type="password")
-        
-        if st.button("Verify"):
-            if secret_key == PROFESSOR_SECRET_KEY:
-                st.session_state.prof_verified = True
-                st.rerun()
-            else:
-                st.error("Access Denied: Invalid Key")
-    else:
-        # Auto-refresh every 3 seconds
-        st_autorefresh(interval=3000, key="monitor_refresh")
-        
-        st.header("🔍 Live Student Monitor")
-        st.caption("Real-time tracking of active quiz sessions")
-        
-        # Load active students
-        try:
-            active_students = get_live_students()  # Uses your existing function
-        except Exception as e:
-            st.error("⚠️ Error loading data")
-            active_students = []
-        
-        if not active_students:
-            st.markdown("""
-            <div style='text-align: center; padding: 20px; border-radius: 10px; background: #f0f2f6;'>
-                <p style='font-size: 18px; color: #555;'>🕒 No active quiz sessions</p>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"**Active Students ({len(active_students)}):**")
-            for student in active_students:
-                st.markdown(f"- 🧑‍💻 {student}")
-        
-        if st.button("Exit Monitor"):
-            st.session_state.prof_verified = False
+        if st.button("Verify") and secret_key == PROFESSOR_SECRET_KEY:
+            st.session_state.prof_verified = True
             st.rerun()
-
+    else:
+        st_autorefresh(interval=3000, key="monitor_refresh")  # Refresh every 3 sec
+        
+        st.header("👥 Active Quiz Takers")
+        try:
+            active_students = []
+            if os.path.exists(ACTIVE_FILE):
+                with open(ACTIVE_FILE, "r") as f:
+                    active_students = json.load(f)
+            
+            if not active_students:
+                st.warning("No students currently taking the quiz")
+            else:
+                for student in active_students:
+                    st.success(f"• {student}")
+        
+        except Exception as e:
+            st.error(f"Monitoring error: {str(e)}")
 elif choice == "View Recordings":
     if not st.session_state.get('recordings_verified', False):
         secret_key = st.text_input("Enter Professor Secret Key to view recordings", type="password")
