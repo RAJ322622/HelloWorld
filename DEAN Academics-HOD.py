@@ -550,7 +550,6 @@ elif choice == "Take Quiz":
                                 st.rerun()
                                 
                         except Exception as e:
-                            st.warning(f"⚠️ Camera stream issue: {str(e)}")
                             st.info("Using fallback photo capture...")
                             
                             img_file_buffer = st.camera_input("Take a verification photo")
