@@ -257,34 +257,23 @@ def create_video(question_text, filename, audio_file):
         return None
 
 # Video Processor for Streamlit WebRTC with improved error handling
+# Video Processor for Streamlit WebRTC
 class VideoProcessor(VideoProcessorBase):
     def __init__(self):
         self.recording = True
-        try:
-            self.container = av.open(os.path.join(RECORDING_DIR, "quiz_recording.mp4"), mode="w")
-            self.stream = self.container.add_stream("h264")
-        except Exception as e:
-            st.error(f"Error initializing video processor: {str(e)}")
-            raise
+        self.container = av.open(os.path.join(RECORDING_DIR, "quiz_recording.mp4"), mode="w")
+        self.stream = self.container.add_stream("h264")
 
     def recv(self, frame):
-        try:
-            img = frame.to_ndarray(format="bgr24")
-            if self.recording:
-                packet = self.stream.encode(frame)
-                if packet:
-                    self.container.mux(packet)
-            return av.VideoFrame.from_ndarray(img, format="bgr24")
-        except Exception as e:
-            st.error(f"Error processing video frame: {str(e)}")
-            return frame
+        img = frame.to_ndarray(format="bgr24")
+        if self.recording:
+            packet = self.stream.encode(frame)
+            if packet:
+                self.container.mux(packet)
+        return av.VideoFrame.from_ndarray(img, format="bgr24")
 
     def close(self):
-        try:
-            if hasattr(self, 'container'):
-                self.container.close()
-        except Exception as e:
-            st.error(f"Error closing video container: {str(e)}")
+        self.container.close()
 
 # Streamlit UI
 st.title("🎥 Interactive Video Quiz 🎬")
@@ -473,37 +462,18 @@ elif choice == "Take Quiz":
                         
                         # Try to initialize the camera with optimized settings
                         try:
-                            # Show a loading message while initializing
-                            with st.spinner("Initializing webcam..."):
-                                webrtc_ctx = webrtc_streamer(
-                                    key="quiz_camera",
-                                    mode=WebRtcMode.SENDRECV,
-                                    media_stream_constraints={
-                                        "video": {
-                                            "width": 640,  # Lower resolution for faster processing
-                                            "height": 480,
-                                            "frameRate": 15  # Lower frame rate for efficiency
-                                        },
-                                        "audio": True  # Disable audio to reduce processing
-                                    },
-                                    video_processor_factory=VideoProcessor,
-                                    async_processing=True,  # Enable async processing for better performance
-                                    rtc_configuration={  # Add ICE servers for better connectivity
-                                        "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
-                                    }
-                                )
-                                
-                                # Show status message
-                                if webrtc_ctx.state.playing:
-                                    st.success("Webcam is active - You're being monitored by the professor")
-                                else:
-                                    st.warning("Waiting for webcam connection...")
+                            # Start camera monitoring
+                            st.subheader("📷 Live Camera Monitoring Enabled")
+                            webrtc_streamer(
+                                key="camera",
+                                mode=WebRtcMode.SENDRECV,
+                                media_stream_constraints={"video": True, "audio": False},
+                                video_processor_factory=VideoProcessor,
+                            )
                                     
                         except Exception as e:
                             # Fallback option if webcam fails
-                            st.info("You're still being monitored through alternative methods")
-                            
-                            
+                            st.info("You're still being monitored through alternative methods")           
                                                
                             
 
