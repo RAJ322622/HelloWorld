@@ -643,6 +643,7 @@ Thank you for participating.""")
                     
                                 st.session_state.quiz_submitted = True
                                 st.success(f"Quiz submitted successfully! Your score is {score}/{len(QUESTIONS)}")
+                                st.success("Quiz submitted successfully! check Your Mail")
                                 st.balloons()
                                 st.rerun()
                                 
