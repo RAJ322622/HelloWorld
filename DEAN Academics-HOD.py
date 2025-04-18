@@ -69,6 +69,17 @@ def initialize_database():
     conn = None
     try:
         conn = get_db_connection()
+        
+        # Check if role column exists
+        cursor = conn.execute("PRAGMA table_info(users)")
+        columns = [column[1] for column in cursor.fetchall()]
+        
+        if 'role' not in columns:
+            # Add the role column if it doesn't exist
+            conn.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'student'")
+            conn.commit()
+        
+        # Create tables if they don't exist
         conn.execute('''CREATE TABLE IF NOT EXISTS users (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         username TEXT UNIQUE,
@@ -95,7 +106,6 @@ initialize_database()
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# Register user with improved error handling
 def register_user(username, password, role, email):
     conn = None
     try:
@@ -314,8 +324,7 @@ if choice == "Register":
     if st.button("Verify and Register"):
         if otp_entered == st.session_state.get('reg_otp'):
             username,password,email = st.session_state['reg_data']
-            register_user(username, password,role, email)
-            # Clear registration data
+            register_user(username, password, role, email)            # Clear registration data
             del st.session_state['reg_otp']
             del st.session_state['reg_data']
         else:
