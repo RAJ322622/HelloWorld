@@ -27,11 +27,12 @@ PROFESSOR_SECRET_KEY = "RRCE@123"
 ACTIVE_FILE = "active_students.json"
 PROF_CSV_FILE = "professor_results.csv"
 
-# Ensure directories exist
+# Use tempfile for all directories
 VIDEO_DIR = os.path.join(tempfile.gettempdir(), "videos")
-RECORDING_DIR = tempfile.mkdtemp()
+RECORDING_DIR = os.path.join(tempfile.gettempdir(), "recordings")
 CSV_FILE = os.path.join(tempfile.gettempdir(), "quiz_results.csv")
 
+# Create directories safely
 os.makedirs(VIDEO_DIR, exist_ok=True)
 os.makedirs(RECORDING_DIR, exist_ok=True)
 
@@ -384,12 +385,19 @@ elif choice == "Take Quiz":
 
                 if st.session_state.camera_active and not st.session_state.quiz_submitted:
                     st.markdown("<span style='color:red;'>\U0001F7E2 Webcam is ON</span>", unsafe_allow_html=True)
-                    webrtc_streamer(
-                        key="camera",
-                        mode=WebRtcMode.SENDRECV,
-                        media_stream_constraints={"video": True, "audio": False},
-                        video_processor_factory=VideoProcessor,
-                    )
+                    try:
+                        webrtc_streamer(
+                            key="camera",
+                            mode=WebRtcMode.SENDRECV,
+                            media_stream_constraints={"video": True, "audio": False},
+                            video_processor_factory=VideoProcessor,
+                        )
+                    except Exception as e:
+                        st.warning("Live camera unavailable in this environment")
+                        video_file = st.file_uploader("Upload recording instead", type=["mp4", "mov"])
+                        if video_file:
+                            with open(os.path.join(RECORDING_DIR, "uploaded_recording.mp4"), "wb") as f:
+                                f.write(video_file.getbuffer())
 
                 for idx, question in enumerate(QUESTIONS):
                     st.markdown(f"**Q{idx+1}:** {question['question']}")
