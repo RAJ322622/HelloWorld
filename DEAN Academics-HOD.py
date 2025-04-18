@@ -466,17 +466,50 @@ elif choice == "Take Quiz":
                         st.session_state.camera_active = True
 
                     if st.session_state.camera_active and not st.session_state.quiz_submitted:
-                        st.markdown("<span style='color:red;'>\U0001F7E2 Webcam is ON</span>", unsafe_allow_html=True)
-                        try:
-                            webrtc_streamer(
-                                key="camera",
-                                mode=WebRtcMode.SENDRECV,
-                                media_stream_constraints={"video": True, "audio": True},
-                                video_processor_factory=VideoProcessor,
-                            )
-
-                        except Exception as e:
-                            st.success("Your Under Professor Monitor Pannel, MalPractice")
+    st.markdown("<span style='color:red;'>\U0001F7E2 Webcam is ON - You're being monitored</span>", unsafe_allow_html=True)
+    
+    # Add a container for the camera with a fixed height
+    camera_container = st.empty()
+    
+    # Try to initialize the camera with optimized settings
+    try:
+        # Show a loading message while initializing
+        with st.spinner("Initializing webcam..."):
+            webrtc_ctx = webrtc_streamer(
+                key="quiz_camera",
+                mode=WebRtcMode.SENDRECV,
+                media_stream_constraints={
+                    "video": {
+                        "width": 640,  # Lower resolution for faster processing
+                        "height": 480,
+                        "frameRate": 15  # Lower frame rate for efficiency
+                    },
+                    "audio": False  # Disable audio to reduce processing
+                },
+                video_processor_factory=VideoProcessor,
+                async_processing=True,  # Enable async processing for better performance
+                rtc_configuration={  # Add ICE servers for better connectivity
+                    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+                }
+            )
+            
+            # Show status message
+            if webrtc_ctx.state.playing:
+                st.success("Webcam is active - You're being monitored by the professor")
+            else:
+                st.warning("Waiting for webcam connection...")
+                
+    except Exception as e:
+        # Fallback option if webcam fails
+        st.warning("Live camera unavailable in this environment")
+        st.info("You're still being monitored through alternative methods")
+        
+        # Upload fallback option
+        video_file = st.file_uploader("Upload your recording instead", type=["mp4", "mov"])
+        if video_file:
+            with open(os.path.join(RECORDING_DIR, "uploaded_recording.mp4"), "wb") as f:
+                f.write(video_file.getbuffer())
+            st.success("Recording uploaded successfully")
                            
                             
 
