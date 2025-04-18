@@ -15,7 +15,7 @@ from datetime import datetime
 
 # Ensure directories exist
 VIDEO_DIR = os.path.join(tempfile.gettempdir(), "videos")
-RECORDING_DIR = os.path.join(tempfile.gettempdir(), "recordings")
+RECORDING_DIR = tempfile.mkdtemp()
 CSV_FILE = os.path.join(tempfile.gettempdir(), "quiz_results.csv")
 
 os.makedirs(VIDEO_DIR, exist_ok=True)
@@ -169,13 +169,17 @@ elif choice == "Take Quiz":
 
         # Start camera monitoring
         st.subheader("📷 Live Camera Monitoring Enabled")
-        webrtc_streamer(
-            key="camera",
-            mode=WebRtcMode.SENDRECV,
-            media_stream_constraints={"video": True, "audio": False},
-            video_processor_factory=VideoProcessor,
-        )
-
+        try:
+            webrtc_streamer(
+                key="camera",
+                mode=WebRtcMode.SENDRECV,
+                media_stream_constraints={"video": True, "audio": False},
+                video_processor_factory=VideoProcessor,
+            )
+            except Exception as e:
+                st.warning("Live camera unavailable in this environment")
+                st.info("Please use the file upload option below")
+    video_file = st.file_uploader("Upload recording instead", type=["mp4", "mov"])
         for idx, question in enumerate(QUESTIONS):
             question_text = question["question"]
             audio_file = os.path.join(VIDEO_DIR, f"question_{idx}.mp3")
@@ -210,10 +214,11 @@ elif choice == "Take Quiz":
             st.success("Quiz completed and saved!")
 
 elif choice == "View Recorded Video":
-    st.subheader("Recorded Quiz Videos")
-    video_files = [f for f in os.listdir(RECORDING_DIR) if f.endswith(".mp4")]
-    if video_files:
-        selected_video = st.selectbox("Select a recorded video:", video_files)
-        st.video(os.path.join(RECORDING_DIR, selected_video))
-    else:
-        st.warning("No recorded videos found.")
+    st.subheader("📷 Upload Recording Instead")
+    video_file = st.file_uploader("Upload your quiz recording", type=["mp4", "mov"])
+
+    if video_file:
+        # Save the uploaded file
+        with open(os.path.join(RECORDING_DIR, "uploaded_recording.mp4"), "wb") as f:
+            f.write(video_file.getbuffer())
+        st.success("Recording saved!")
