@@ -108,7 +108,7 @@ def init_db():
             conn.close()
 
 # Call this at the start of your application, right after imports
-init_db())
+init_db()
 
 # Password hashing
 def hash_password(password):
