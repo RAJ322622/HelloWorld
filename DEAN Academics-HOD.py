@@ -21,8 +21,7 @@ import shutil
 import tempfile
 from streamlit.runtime.scriptrunner import RerunData
 from streamlit.runtime.scriptrunner import get_script_run_ctx
-from streamlit.runtime.scriptrunner import RerunException  # Add this import at the top
-
+from streamlit.runtime.scriptrunner import RerunException
 
 # Constants
 EMAIL_SENDER = "rajkumar.k0322@gmail.com"
@@ -36,11 +35,13 @@ PROF_CSV_FILE = "professor_results.csv"
 # Use tempfile for all directories
 VIDEO_DIR = os.path.join(tempfile.gettempdir(), "videos")
 RECORDING_DIR = os.path.join(tempfile.gettempdir(), "recordings")
+PHOTO_DIR = os.path.join(tempfile.gettempdir(), "student_photos")
 CSV_FILE = os.path.join(tempfile.gettempdir(), "quiz_results.csv")
 
 # Create directories safely
 os.makedirs(VIDEO_DIR, exist_ok=True)
 os.makedirs(RECORDING_DIR, exist_ok=True)
+os.makedirs(PHOTO_DIR, exist_ok=True)
 
 # Initialize session state
 if 'logged_in' not in st.session_state:
@@ -129,7 +130,6 @@ def register_user(username, password, role, email):
         if conn:
             conn.close()
 
-# Authenticate user with improved error handling
 def authenticate_user(username, password):
     conn = None
     try:
@@ -144,7 +144,6 @@ def authenticate_user(username, password):
         if conn:
             conn.close()
 
-# Get user role with improved error handling
 def get_user_role(username):
     conn = None
     try:
@@ -159,7 +158,6 @@ def get_user_role(username):
         if conn:
             conn.close()
 
-# Email functions with improved error handling
 def send_email_otp(to_email, otp):
     try:
         msg = EmailMessage()
@@ -177,7 +175,6 @@ def send_email_otp(to_email, otp):
         st.error(f"Failed to send OTP: {e}")
         return False
 
-# Active student tracking with improved error handling
 def add_active_student(username):
     try:
         data = []
@@ -219,7 +216,6 @@ QUESTIONS = [
     {"question": "🔁 Which loop is used when the number of iterations is known? 🔄", "options": ["while", "do-while", "for", "if"], "answer": "for"},
     {"question": "📌 What is the format specifier for printing an integer in C? 🖨️", "options": ["%c", "%d", "%f", "%s"], "answer": "%d"}]
 
-# Generate audio for questions with error handling
 def generate_audio(question_text, filename):
     try:
         if not os.path.exists(filename):
@@ -228,7 +224,6 @@ def generate_audio(question_text, filename):
     except Exception as e:
         st.error(f"Error generating audio: {str(e)}")
 
-# Create video for questions with error handling
 def create_video(question_text, filename, audio_file):
     try:
         video_path = os.path.join(VIDEO_DIR, filename)
@@ -307,8 +302,6 @@ def rerun():
     if ctx:
         raise RerunException(RerunData())
 
-# Video Processor for Streamlit WebRTC with improved error handling
-
 class VideoProcessor(VideoProcessorBase):
     def __init__(self):
         self.recording = True
@@ -335,6 +328,7 @@ class VideoProcessor(VideoProcessorBase):
         except Exception as e:
             st.error(f"Camera error: {str(e)}")
             return frame
+            
     def _save_recording(self):
         if not self.frames:
             return
@@ -358,12 +352,13 @@ class VideoProcessor(VideoProcessorBase):
 
     def close(self):
         self._save_recording()
+
 # Streamlit UI
 st.title("🎥 Interactive Video Quiz 🎬")
 
 # UI Starts
 st.title("\U0001F393 Secure Quiz App with Webcam \U0001F4F5")
-menu = ["Register", "Login", "Take Quiz", "Change Password", "Professor Panel", "Professor Monitoring Panel", "View Recorded Video"]
+menu = ["Register", "Login", "Take Quiz", "Change Password", "Professor Panel", "Professor Monitoring Panel", "View Recordings"]
 choice = st.sidebar.selectbox("Menu", menu)
 
 if choice == "Register":
@@ -386,8 +381,7 @@ if choice == "Register":
     if st.button("Verify and Register"):
         if 'reg_otp' in st.session_state and otp_entered == st.session_state['reg_otp']:
             username, password, email = st.session_state['reg_data']
-            if register_user(username, password, "student", email):  # Explicitly setting role to "student"
-                # Clear registration data
+            if register_user(username, password, "student", email):
                 del st.session_state['reg_otp']
                 del st.session_state['reg_data']
                 st.success("Registration successful! Please login.")
@@ -397,13 +391,11 @@ if choice == "Register":
 elif choice == "Login":
     st.subheader("Login")
 
-    # Initialize login form fields in session state if they don't exist
     if 'login_username' not in st.session_state:
         st.session_state.login_username = ""
     if 'login_password' not in st.session_state:
         st.session_state.login_password = ""
 
-    # ---------- Login Form ----------
     username = st.text_input("Username", value=st.session_state.login_username, key="login_username_widget")
     password = st.text_input("Password", type="password", value=st.session_state.login_password, key="login_password_widget")
     
@@ -416,7 +408,6 @@ elif choice == "Login":
         else:
             st.error("Invalid username or password.")
 
-    # ---------- Forgot Password ----------
     st.markdown("### Forgot Password?")
     forgot_email = st.text_input("Enter registered email", key="forgot_email_input")
     
@@ -435,7 +426,6 @@ elif choice == "Login":
         else:
             st.error("Email not registered.")
 
-    # ---------- Reset Password ----------
     if 'reset_otp' in st.session_state and 'reset_email' in st.session_state:
         st.markdown("### Reset Your Password")
         entered_otp = st.text_input("Enter OTP to reset password", key="reset_otp_input")
@@ -447,17 +437,14 @@ elif choice == "Login":
                 if new_password == confirm_password:
                     conn = get_db_connection()
                     try:
-                        # Update password in users table
                         conn.execute("UPDATE users SET password = ? WHERE username = ?",
                                   (hash_password(new_password), st.session_state['reset_user']))
                         
-                        # Verify the password was updated
                         cursor = conn.execute("SELECT password FROM users WHERE username = ?",
                                              (st.session_state['reset_user'],))
                         updated_password = cursor.fetchone()[0]
                         
                         if updated_password == hash_password(new_password):
-                            # Update password change count
                             cursor = conn.execute("SELECT change_count FROM password_changes WHERE username = ?",
                                                 (st.session_state['reset_user'],))
                             record = cursor.fetchone()
@@ -471,18 +458,15 @@ elif choice == "Login":
                             
                             conn.commit()
                             
-                            # Store credentials for auto-fill (without modifying widget state directly)
                             st.session_state.login_username = st.session_state['reset_user']
                             st.session_state.login_password = new_password
                             
                             st.success("Password reset successfully! Your credentials have been filled below. Click Login to continue.")
                             
-                            # Clear reset-related session state
                             for key in ['reset_otp', 'reset_email', 'reset_user']:
                                 if key in st.session_state:
                                     del st.session_state[key]
                             
-                            # Rerun to update the UI with filled credentials
                             st.rerun()
                         else:
                             st.error("Password update failed. Please try again.")
@@ -494,6 +478,7 @@ elif choice == "Login":
                     st.error("Passwords do not match. Please try again.")
             else:
                 st.error("Incorrect OTP. Please try again.")
+
 elif choice == "Take Quiz":
     if not st.session_state.logged_in:
         st.warning("Please login first!")
@@ -554,7 +539,7 @@ elif choice == "Take Quiz":
                                 },
                                 video_processor_factory=VideoProcessor,
                                 rtc_configuration={
-                                    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}
+                                    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
                                 },
                                 async_processing=True
                             )
@@ -562,36 +547,28 @@ elif choice == "Take Quiz":
                             if webrtc_ctx and not webrtc_ctx.state.playing:
                                 st.warning("⚠️ Camera is loading... Please allow camera access")
                                 time.sleep(1)
-                                st.experimental_rerun()  # This will be gracefully ignored if not available
+                                st.experimental_rerun()
                                 
                         except Exception as e:
                             st.warning(f"⚠️ Camera stream issue: {str(e)}")
                             st.info("Using fallback photo capture...")
                             
-                            # Fallback to single photo capture
                             img_file_buffer = st.camera_input("Take a verification photo")
                             if img_file_buffer is not None:
                                 try:
-                                    # Create professor directory if it doesn't exist
-                                    prof_dir = os.path.join(st.session_state.prof_dir, "student_photos")
-                                    os.makedirs(prof_dir, exist_ok=True)
-                                    
-                                    # Save photo with student info
+                                    os.makedirs(PHOTO_DIR, exist_ok=True)
                                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                    img_path = os.path.join(prof_dir, f"{st.session_state.username}_{st.session_state.usn}_{timestamp}.jpg")
+                                    img_path = os.path.join(PHOTO_DIR, f"{st.session_state.username}_{st.session_state.usn}_{timestamp}.jpg")
                                     
                                     with open(img_path, "wb") as f:
                                         f.write(img_file_buffer.getvalue())
-                                    st.success("✅ Verification photo saved for professor review!")
+                                    st.success("✅ Verification photo saved!")
                                 except Exception as e:
                                     st.error(f"Failed to save photo: {str(e)}")
 
-                    # VIDEO QUESTIONS SECTION
-                    # In your Take Quiz section, update the video generation part:
                     for idx, question in enumerate(QUESTIONS):
                         question_text = question["question"]
     
-                        # Generate audio file
                         audio_file = os.path.join(VIDEO_DIR, f"question_{idx}.mp3")
                         if not os.path.exists(audio_file):
                             try:
@@ -599,12 +576,10 @@ elif choice == "Take Quiz":
                                 tts.save(audio_file)
                             except Exception as e:
                                 st.error(f"Error generating audio: {str(e)}")
-                                # Fallback to text display
                                 st.markdown(f"**Q{idx+1}:** {question_text}")
                                 ans = st.radio("Select your answer:", question['options'], key=f"q{idx}", index=None)
                                 continue
                         
-                        # Create video file
                         video_file = os.path.join(VIDEO_DIR, f"question_{idx}.mp4")
                         final_video_path = create_video(question_text, f"question_{idx}_final.mp4", audio_file)
                         
@@ -613,10 +588,8 @@ elif choice == "Take Quiz":
                                 st.video(final_video_path)
                             except Exception as e:
                                 st.error(f"Error displaying video: {str(e)}")
-                                # Fallback to text display
                                 st.markdown(f"**Q{idx+1}:** {question_text}")
                         else:
-                            # Fallback to text display if video creation fails
                             st.markdown(f"**Q{idx+1}:** {question_text}")
                         
                         ans = st.radio("Select your answer:", question['options'], key=f"q{idx}", index=None)
@@ -637,7 +610,6 @@ elif choice == "Take Quiz":
                             new_row = pd.DataFrame([[username, hash_password(username), st.session_state.usn, st.session_state.section, score, time_taken, datetime.now()]],
                                                 columns=["Username", "Hashed_Password", "USN", "Section", "Score", "Time_Taken", "Timestamp"])
 
-                            # Append to professor's CSV
                             try:
                                 if os.path.exists(PROF_CSV_FILE):
                                     prof_df = pd.read_csv(PROF_CSV_FILE)
@@ -646,7 +618,6 @@ elif choice == "Take Quiz":
                                     prof_df = new_row
                                 prof_df.to_csv(PROF_CSV_FILE, index=False)
 
-                                # Save to student section-wise CSV
                                 section_file = f"{st.session_state.section}_results.csv"
                                 if os.path.exists(section_file):
                                     sec_df = pd.read_csv(section_file)
@@ -655,14 +626,12 @@ elif choice == "Take Quiz":
                                     sec_df = new_row
                                 sec_df.to_csv(section_file, index=False)
 
-                                # Update attempts
                                 if record:
                                     cur.execute("UPDATE quiz_attempts SET attempt_count = attempt_count + 1 WHERE username = ?", (username,))
                                 else:
                                     cur.execute("INSERT INTO quiz_attempts (username, attempt_count) VALUES (?, ?)", (username, 1))
                                 conn.commit()
 
-                                # Send results via email
                                 email_result = conn.execute("SELECT email FROM users WHERE username = ?", (username,)).fetchone()
                                 if email_result:
                                     student_email = email_result[0]
@@ -691,7 +660,6 @@ elif choice == "Take Quiz":
             finally:
                 if conn:
                     conn.close()
-
 
 elif choice == "Change Password":
     if not st.session_state.logged_in:
@@ -723,11 +691,9 @@ elif choice == "Change Password":
                     st.success("Password updated successfully.")
                 conn.close()
 
-
 elif choice == "Professor Panel":
     st.subheader("\U0001F9D1‍\U0001F3EB Professor Access Panel")
     
-    # First check for secret key
     if 'prof_secret_verified' not in st.session_state:
         secret_key = st.text_input("Enter Professor Secret Key to continue", type="password")
         
@@ -738,10 +704,9 @@ elif choice == "Professor Panel":
             else:
                 st.error("Invalid secret key! Access denied.")
     else:
-        # After secret key verification, show login/registration tabs
         tab1, tab2 = st.tabs(["Professor Login", "Professor Registration"])
         
-        with tab1:  # Login tab
+        with tab1:
             if not st.session_state.get('prof_logged_in', False):
                 prof_id = st.text_input("Professor ID")
                 prof_pass = st.text_input("Professor Password", type="password")
@@ -763,16 +728,13 @@ elif choice == "Professor Panel":
                     else:
                         st.error("Invalid Professor credentials")
             else:
-                # Show professor dashboard after successful login
                 st.success(f"Welcome Professor {st.session_state.username}!")
                 st.subheader("Student Results Management")
                 
-                # View results section
                 result_files = []
                 if os.path.exists(PROF_CSV_FILE):
                     result_files.append(PROF_CSV_FILE)
                 
-                # Check for section-wise files
                 section_files = [f for f in os.listdir() if f.endswith("_results.csv")]
                 result_files.extend(section_files)
                 
@@ -781,7 +743,6 @@ elif choice == "Professor Panel":
                     try:
                         df = pd.read_csv(selected_file)
                         
-                        # Display statistics
                         col1, col2, col3 = st.columns(3)
                         with col1:
                             st.metric("Total Students", len(df))
@@ -792,14 +753,12 @@ elif choice == "Professor Panel":
                             pass_rate = (len(df[df['Score'] >= len(QUESTIONS)/2]) / len(df)) * 100
                             st.metric("Pass Rate", f"{pass_rate:.1f}%")
 
-                        # Show full results
                         st.markdown("### Detailed Results")
                         sort_by = st.selectbox("Sort by", ["Score", "Time_Taken", "Timestamp", "Section"])
                         ascending = st.checkbox("Ascending order", True)
                         sorted_df = df.sort_values(by=sort_by, ascending=ascending)
                         st.dataframe(sorted_df)
                         
-                        # Download option
                         st.download_button(
                             label="Download Results",
                             data=sorted_df.to_csv(index=False),
@@ -812,18 +771,16 @@ elif choice == "Professor Panel":
                 else:
                     st.warning("No results available yet.")
                 
-                # Logout button
                 if st.button("Logout"):
                     st.session_state.prof_logged_in = False
                     st.session_state.username = ""
                     st.session_state.role = ""
                     st.rerun()
         
-        with tab2:  # Registration tab
+        with tab2:
             st.subheader("Professor Registration")
             st.warning("Professor accounts require verification.")
             
-            # Registration form
             full_name = st.text_input("Full Name")
             designation = st.text_input("Designation")
             department = st.selectbox("Department", ["CSE", "ISE", "ECE", "EEE", "MECH", "CIVIL"])
@@ -831,21 +788,17 @@ elif choice == "Professor Panel":
             
             if st.button("Request Account"):
                 if full_name and designation and department and institutional_email:
-                    # Generate credentials
                     prof_id = f"PROF-{random.randint(10000, 99999)}"
                     temp_password = str(random.randint(100000, 999999))
                     
-                    # Register professor
                     conn = get_db_connection()
                     try:
                         conn.execute("INSERT INTO users (username, password, role, email) VALUES (?, ?, ?, ?)",
                                     (prof_id, hash_password(temp_password), "professor", institutional_email))
                         conn.commit()
                         
-                        # Create directory
                         os.makedirs(f"professor_data/{prof_id}", exist_ok=True)
                         
-                        # Send credentials
                         try:
                             msg = EmailMessage()
                             msg.set_content(f"""Dear {full_name},
@@ -911,13 +864,58 @@ elif choice == "Professor Monitoring Panel":
             else:
                 st.warning("No quiz submissions yet.")
 
-elif choice == "View Recorded Video":
+elif choice == "View Recordings":
     st.subheader("Recorded Sessions")
-    video_files = [f for f in os.listdir(RECORDING_DIR) if f.endswith(".mp4")]
     
-    if video_files:
-        selected_video = st.selectbox("Select recording", video_files)
-        video_path = os.path.join(RECORDING_DIR, selected_video)
-        st.video(video_path)
-    else:
-        st.warning("No recordings available.")
+    tab1, tab2 = st.tabs(["Videos", "Photos"])
+    
+    with tab1:
+        st.markdown("### Video Recordings")
+        video_files = [f for f in os.listdir(RECORDING_DIR) if f.endswith(".mp4")]
+        
+        if video_files:
+            selected_video = st.selectbox("Select a video recording", video_files)
+            video_path = os.path.join(RECORDING_DIR, selected_video)
+            st.video(video_path)
+            
+            if st.button("Delete Selected Video"):
+                try:
+                    os.remove(video_path)
+                    st.success("Video deleted successfully!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error deleting video: {str(e)}")
+        else:
+            st.warning("No video recordings available.")
+    
+    with tab2:
+        st.markdown("### Student Verification Photos")
+        photo_files = [f for f in os.listdir(PHOTO_DIR) if f.endswith(".jpg")]
+        
+        if photo_files:
+            selected_photo = st.selectbox("Select a photo", photo_files)
+            photo_path = os.path.join(PHOTO_DIR, selected_photo)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.image(photo_path, caption=selected_photo, use_column_width=True)
+            
+            with col2:
+                st.write("Photo Details:")
+                parts = selected_photo.split('_')
+                                if len(parts) >= 3:
+                    st.write(f"USN: {parts[0]}")
+                    st.write(f"Section: {parts[1]}")
+                    st.write(f"Timestamp: {'_'.join(parts[2:]).replace('.jpg', '')}")
+                else:
+                    st.write("Unable to extract photo details.")
+
+                if st.button("Delete Selected Photo"):
+                    try:
+                        os.remove(photo_path)
+                        st.success("Photo deleted successfully!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error deleting photo: {str(e)}")
+        else:
+            st.warning("No student verification photos available.")
