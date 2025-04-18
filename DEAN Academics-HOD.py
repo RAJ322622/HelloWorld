@@ -594,29 +594,45 @@ elif choice == "Take Quiz":
                         ans = st.radio("Select your answer:", question['options'], key=f"q{idx}", index=None)
                         answers[question['question']] = ans
 
-                    submit_btn = st.button("Submit Quiz")
-                    auto_submit_triggered = st.session_state.get("auto_submit", False)
+                    # In the Take Quiz section, modify the submission logic:
 
+                    # Replace the current submit button code with this:
+                    if not st.session_state.quiz_submitted:
+                        submit_btn = st.button("Submit Quiz")
+                    else:
+                        st.warning("Quiz already submitted!")
+                        submit_btn = False
+                    
+                    auto_submit_triggered = st.session_state.get("auto_submit", False)
+                    
                     if (submit_btn or auto_submit_triggered) and not st.session_state.quiz_submitted:
                         if None in answers.values():
                             st.error("Please answer all questions before submitting the quiz.")
                         else:
-                            for q in QUESTIONS:
-                                if answers.get(q["question"]) == q["answer"]:
-                                    score += 1
-                            time_taken = round(time.time() - st.session_state.quiz_start_time, 2)
-
-                            new_row = pd.DataFrame([[username, hash_password(username), st.session_state.usn, st.session_state.section, score, time_taken, datetime.now()]],
-                                                columns=["Username", "Hashed_Password", "USN", "Section", "Score", "Time_Taken", "Timestamp"])
-
                             try:
+                                # Calculate score
+                                score = 0
+                                for q in QUESTIONS:
+                                    if answers.get(q["question"]) == q["answer"]:
+                                        score += 1
+                                
+                                time_taken = round(time.time() - st.session_state.quiz_start_time, 2)
+                    
+                                # Save results
+                                new_row = pd.DataFrame([[username, hash_password(username), st.session_state.usn, 
+                                                       st.session_state.section, score, time_taken, datetime.now()]],
+                                                     columns=["Username", "Hashed_Password", "USN", "Section", 
+                                                             "Score", "Time_Taken", "Timestamp"])
+                    
+                                # Save to professor CSV
                                 if os.path.exists(PROF_CSV_FILE):
                                     prof_df = pd.read_csv(PROF_CSV_FILE)
                                     prof_df = pd.concat([prof_df, new_row], ignore_index=True)
                                 else:
                                     prof_df = new_row
                                 prof_df.to_csv(PROF_CSV_FILE, index=False)
-
+                    
+                                # Save to section CSV
                                 section_file = f"{st.session_state.section}_results.csv"
                                 if os.path.exists(section_file):
                                     sec_df = pd.read_csv(section_file)
@@ -624,31 +640,52 @@ elif choice == "Take Quiz":
                                 else:
                                     sec_df = new_row
                                 sec_df.to_csv(section_file, index=False)
-
+                    
+                                # Update attempts
                                 if record:
                                     cur.execute("UPDATE quiz_attempts SET attempt_count = attempt_count + 1 WHERE username = ?", (username,))
                                 else:
                                     cur.execute("INSERT INTO quiz_attempts (username, attempt_count) VALUES (?, ?)", (username, 1))
                                 conn.commit()
-
+                    
+                                # Send email confirmation
                                 email_result = conn.execute("SELECT email FROM users WHERE username = ?", (username,)).fetchone()
                                 if email_result:
-                                    student_email = email_result[0]
                                     try:
                                         msg = EmailMessage()
-                                        msg.set_content(f"Dear {username},\n\nYou have successfully submitted your quiz.\nScore: {score}/{len(QUESTIONS)}\nTime Taken: {time_taken} seconds\n\nThank you for participating.")
+                                        msg.set_content(f"""Dear {username},
+                                        
+                    You have successfully submitted your quiz.
+                    Score: {score}/{len(QUESTIONS)}
+                    Time Taken: {time_taken} seconds
+                    
+                    Thank you for participating.""")
                                         msg['Subject'] = "Quiz Submission Confirmation"
                                         msg['From'] = EMAIL_SENDER
-                                        msg['To'] = student_email
-
+                                        msg['To'] = email_result[0]
+                    
                                         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
                                             server.starttls()
                                             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
                                             server.send_message(msg)
                                     except Exception as e:
                                         st.error(f"Result email failed: {e}")
-
-                                st.success(f"Quiz submitted successfully! Your score is {score}/{len(QUESTIONS)}.")
+                    
+                                # Update session state and remove from active list
+                                st.session_state.quiz_submitted = True
+                                st.session_state.camera_active = False
+                                remove_active_student(username)  # Ensure this happens
+                                
+                                st.success(f"Quiz submitted successfully! Your score is {score}/{len(QUESTIONS)}")
+                                st.balloons()
+                                
+                                # Force immediate UI update
+                                st.rerun()
+                                
+                            except Exception as e:
+                                st.error(f"Error saving results: {str(e)}")
+                                # Ensure we still remove from active list even if other operations fail
+                                remove_active_student(username)
                                 st.session_state.quiz_submitted = True
                                 st.session_state.camera_active = False
                                 remove_active_student(username)
