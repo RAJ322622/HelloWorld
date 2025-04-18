@@ -333,8 +333,7 @@ class VideoProcessor(VideoProcessorBase):
         except Exception as e:
             st.error(f"Camera error: {str(e)}")
             return frame
-
-   def _save_recording(self):
+    def _save_recording(self):
         if not self.frames:
             return
             
