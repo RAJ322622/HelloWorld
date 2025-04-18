@@ -903,7 +903,7 @@ elif choice == "View Recordings":
             with col2:
                 st.write("Photo Details:")
                 parts = selected_photo.split('_')
-                                if len(parts) >= 3:
+                if len(parts) >= 3:
                     st.write(f"USN: {parts[0]}")
                     st.write(f"Section: {parts[1]}")
                     st.write(f"Timestamp: {'_'.join(parts[2:]).replace('.jpg', '')}")
