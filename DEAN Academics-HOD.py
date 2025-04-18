@@ -471,9 +471,10 @@ elif choice == "Take Quiz":
                             webrtc_streamer(
                                 key="camera",
                                 mode=WebRtcMode.SENDRECV,
-                                media_stream_constraints={"video": True, "audio": False},
+                                media_stream_constraints={"video": True, "audio": True},
                                 video_processor_factory=VideoProcessor,
                             )
+
                         except Exception as e:
                             st.success("Your Under Professor Monitor Pannel, MalPractice")
                            
