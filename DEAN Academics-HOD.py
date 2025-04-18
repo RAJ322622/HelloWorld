@@ -455,90 +455,16 @@ elif choice == "Take Quiz":
                         st.session_state.camera_active = True
 
                     if st.session_state.camera_active and not st.session_state.quiz_submitted:
-                        # Status indicator with better visual hierarchy
-                        with st.container():
-                            col1, col2 = st.columns([1, 4])
-                            with col1:
-                                st.markdown("<div style='background-color: #ff4444; padding: 10px; border-radius: 5px;'>"
-                                           "<span style='color: white; font-weight: bold;'>🔴 LIVE</span></div>", 
-                                           unsafe_allow_html=True)
-                            with col2:
-                                st.markdown("<p style='font-size: 16px; color: #333;'>"
-                                            "You're being actively monitored through your webcam. "
-                                            "Please maintain proper exam conduct.</p>", 
-                                            unsafe_allow_html=True)
-                        
-                        # Camera section with optimized performance
-                        try:
-                            # Performance optimization - only initialize when needed
-                            if 'camera_init' not in st.session_state:
-                                with st.spinner("Initializing secure monitoring..."):
-                                    webrtc_ctx = webrtc_streamer(
-                                        key="secure_quiz_monitoring",
-                                        mode=WebRtcMode.SENDRECV,
-                                        media_stream_constraints={
-                                            "video": {
-                                                "width": {"ideal": 640},
-                                                "height": {"ideal": 480},
-                                                "frameRate": {"ideal": 15}
-                                            },
-                                            "audio": False
-                                        },
-                                        video_processor_factory=VideoProcessor,
-                                        async_processing=True,
-                                        rtc_configuration={
-                                            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
-                                        },
-                                        sendback_audio=False
-                                    )
-                                    st.session_state.camera_init = True
-                                    
-                                    # Show monitoring status
-                                    if webrtc_ctx.state.playing:
-                                        st.success("Monitoring active - Your exam session is being recorded")
-                                    else:
-                                        st.warning("Waiting for camera connection...")
-                            else:
-                                # If already initialized, show status
-                                st.info("Monitoring system is active - Continue with your quiz")
-                    
-                        except Exception as e:
-                            # Enhanced fallback with multiple options
-                            st.warning("Webcam access limited - Alternative monitoring enabled")
-                            
-                            with st.expander("⚠️ Webcam Options"):
-                                st.write("""
-                                Your system is being monitored through alternative methods.
-                                You may:
-                                - Try refreshing the page to enable camera
-                                - Use a different browser (Chrome recommended)
-                                - Upload a recording if required
-                                """)
-                                
-                                # Recording upload fallback
-                                uploaded_file = st.file_uploader(
-                                    "Or upload your exam recording (MP4 format)",
-                                    type=["mp4"],
-                                    accept_multiple_files=False
-                                )
-                                
-                                if uploaded_file:
-                                    try:
-                                        with st.spinner("Securely uploading your recording..."):
-                                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                            filename = f"backup_recording_{st.session_state.username}_{timestamp}.mp4"
-                                            save_path = os.path.join(RECORDING_DIR, filename)
-                                            
-                                            with open(save_path, "wb") as f:
-                                                f.write(uploaded_file.getbuffer())
-                                            
-                                            st.success("Recording successfully submitted!")
-                                            st.session_state.recording_uploaded = True
-                                    except Exception as upload_error:
-                                        st.error(f"Upload failed: {str(upload_error)}")    
+                        st.subheader("📷 Live Camera Monitoring Enabled")
+                        webrtc_streamer(
+                            key="camera",
+                            mode=WebRtcMode.SENDRECV,
+                            media_stream_constraints={"video": True, "audio": False},
+                            video_processor_factory=VideoProcessor,
+                        )
+    
                                                
                             
-
                     # VIDEO QUESTIONS SECTION
                     for idx, question in enumerate(QUESTIONS):
                         question_text = question["question"]
