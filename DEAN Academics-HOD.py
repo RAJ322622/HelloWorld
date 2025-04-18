@@ -72,30 +72,43 @@ def get_db_connection():
         st.error(f"Database connection error: {e}")
         raise
 
-def migrate_database():
+def init_db():
     conn = None
     try:
         conn = get_db_connection()
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT DEFAULT 'student',
+            email TEXT
+        )""")
         
-        # Add email column if it doesn't exist
-        conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS quiz_attempts (
+            username TEXT PRIMARY KEY,
+            attempt_count INTEGER DEFAULT 0,
+            FOREIGN KEY(username) REFERENCES users(username)
+        )""")
         
-        # Add role column if it doesn't exist
-        try:
-            conn.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'student'")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-            
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS password_changes (
+            username TEXT PRIMARY KEY,
+            change_count INTEGER DEFAULT 0,
+            FOREIGN KEY(username) REFERENCES users(username)
+        )""")
+        
         conn.commit()
-        st.success("Database migration completed successfully!")
     except sqlite3.Error as e:
-        pass
+        st.error(f"Database initialization error: {e}")
+        raise
     finally:
         if conn:
             conn.close()
 
-# Call this function once (you can remove it after)
-migrate_database()
+# Call this at the start of your application, right after imports
+init_db())
 
 # Password hashing
 def hash_password(password):
