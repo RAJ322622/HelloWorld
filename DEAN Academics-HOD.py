@@ -1,4 +1,6 @@
+# Corrected imports
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 import sqlite3
 import hashlib
 import time
@@ -9,7 +11,6 @@ import tempfile
 import json
 from datetime import datetime
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase
-from streamlit_autorefresh import st_autorefresh
 import av
 import smtplib
 from email.message import EmailMessage
