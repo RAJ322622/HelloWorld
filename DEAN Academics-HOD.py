@@ -257,34 +257,54 @@ def create_video(question_text, filename, audio_file):
         return None
 
 # Video Processor for Streamlit WebRTC with improved error handling
+
 class VideoProcessor(VideoProcessorBase):
     def __init__(self):
         self.recording = True
-        try:
-            self.container = av.open(os.path.join(RECORDING_DIR, "quiz_recording.mp4"), mode="w")
-            self.stream = self.container.add_stream("h264")
-        except Exception as e:
-            st.error(f"Error initializing video processor: {str(e)}")
-            raise
-
+        self.frames = []
+        self.start_time = time.time()
+        
     def recv(self, frame):
         try:
             img = frame.to_ndarray(format="bgr24")
-            if self.recording:
-                packet = self.stream.encode(frame)
-                if packet:
-                    self.container.mux(packet)
+            
+            # Only record every 5th frame to reduce load
+            if self.recording and len(self.frames) % 5 == 0:
+                self.frames.append(img)
+                
+            # Save recording every 30 seconds or when closing
+            if time.time() - self.start_time > 30:
+                self._save_recording()
+                self.start_time = time.time()
+                
             return av.VideoFrame.from_ndarray(img, format="bgr24")
         except Exception as e:
-            st.error(f"Error processing video frame: {str(e)}")
+            st.error(f"Error processing frame: {e}")
             return frame
 
-    def close(self):
+    def _save_recording(self):
+        if not self.frames:
+            return
+            
         try:
-            if hasattr(self, 'container'):
-                self.container.close()
+            # Create video from frames
+            height, width, _ = self.frames[0].shape
+            video_path = os.path.join(RECORDING_DIR, f"quiz_recording_{int(time.time())}.mp4")
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(video_path, fourcc, 10, (width, height))
+            
+            for frame in self.frames:
+                out.write(frame)
+            out.release()
+            
+            # Clear frames buffer
+            self.frames = []
+            
         except Exception as e:
-            st.error(f"Error closing video container: {str(e)}")
+            st.error(f"Error saving recording: {e}")
+
+    def close(self):
+        self._save_recording()
 
 # Streamlit UI
 st.title("🎥 Interactive Video Quiz 🎬")
