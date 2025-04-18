@@ -129,7 +129,6 @@ def register_user(username, password, role, email):
         )
 
         conn.commit()
-        st.success("Registration successful! Please login.")
         return True
         
     except sqlite3.Error as e:
@@ -311,28 +310,32 @@ menu = ["Register", "Login", "Take Quiz", "Change Password", "Professor Panel", 
 choice = st.sidebar.selectbox("Menu", menu)
 
 if choice == "Register":
+    st.subheader("Register")
     username = st.text_input("Username")
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
-    role = st.selectbox("Role", ["student"])
-
+    
     if st.button("Send OTP"):
         if username and email and password:
             otp = str(random.randint(100000, 999999))
             if send_email_otp(email, otp):
                 st.session_state['reg_otp'] = otp
-                st.session_state['reg_data'] = (username, password,  email)
+                st.session_state['reg_data'] = (username, password, email)
                 st.success("OTP sent to your email.")
+            else:
+                st.error("Failed to send OTP. Please try again.")
     
     otp_entered = st.text_input("Enter OTP")
     if st.button("Verify and Register"):
-        if otp_entered == st.session_state.get('reg_otp'):
+        if 'reg_otp' in st.session_state and otp_entered == st.session_state['reg_otp']:
             username, password, email = st.session_state['reg_data']
-            register_user(username, password, "student", email)  # Add role parameter            # Clear registration data
-            del st.session_state['reg_otp']
-            del st.session_state['reg_data']
+            if register_user(username, password, "student", email):  # Explicitly setting role to "student"
+                # Clear registration data
+                del st.session_state['reg_otp']
+                del st.session_state['reg_data']
+                st.success("Registration successful! Please login.")
         else:
-            st.error("Incorrect OTP!")
+            st.error("Incorrect OTP or OTP not requested!")
 
 elif choice == "Login":
     st.subheader("Login")
