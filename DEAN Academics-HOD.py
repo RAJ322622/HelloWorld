@@ -176,9 +176,9 @@ elif choice == "Take Quiz":
                 media_stream_constraints={"video": True, "audio": False},
                 video_processor_factory=VideoProcessor,
             )
-            except Exception as e:
-                st.warning("Live camera unavailable in this environment")
-                st.info("Please use the file upload option below")
+        except Exception as e:
+            st.warning("Live camera unavailable in this environment")
+            st.info("Please use the file upload option below")
     video_file = st.file_uploader("Upload recording instead", type=["mp4", "mov"])
         for idx, question in enumerate(QUESTIONS):
             question_text = question["question"]
