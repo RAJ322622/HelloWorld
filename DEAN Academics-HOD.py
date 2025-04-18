@@ -488,14 +488,35 @@ elif choice == "Take Quiz":
                     if st.session_state.camera_active and not st.session_state.quiz_submitted:
                         st.markdown("<span style='color:red;'>\U0001F7E2 Webcam is ON</span>", unsafe_allow_html=True)
                         try:
-                            webrtc_streamer(
-                                key="camera",
+                            webrtc_ctx = webrtc_streamer(
+                                key="quiz-camera",
                                 mode=WebRtcMode.SENDRECV,
-                                media_stream_constraints={"video": True, "audio": False},
+                                media_stream_constraints={
+                                    "video": {
+                                        "width": {"ideal": 640},
+                                        "height": {"ideal": 480},
+                                        "frameRate": {"ideal": 15}
+                                    },
+                                    "audio": False
+                                },
                                 video_processor_factory=VideoProcessor,
+                                rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+                                async_processing=True
                             )
+                            
+                            if not webrtc_ctx.state.playing:
+                                st.warning("Waiting for camera...")
+                                
                         except Exception as e:
-                            st.success("Live camera available, Professor on Duty!")
+                            st.warning(f"Camera stream issue: {str(e)}")
+                            # Fallback to simple camera capture
+                            st.warning("Using fallback camera capture")
+                            img_file_buffer = st.camera_input("Take a picture")
+                            if img_file_buffer is not None:
+                                bytes_data = img_file_buffer.getvalue()
+                                cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
+                                # Save the image as proof
+                                cv2.imwrite(os.path.join(RECORDING_DIR, f"quiz_capture_{int(time.time())}.jpg"), cv2_img)
                             
 
                     # VIDEO QUESTIONS SECTION
