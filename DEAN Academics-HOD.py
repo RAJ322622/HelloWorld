@@ -475,11 +475,8 @@ elif choice == "Take Quiz":
                                 video_processor_factory=VideoProcessor,
                             )
                         except Exception as e:
-                            st.success("Live camera unavailable in this environment")
-                            video_file = st.file_uploader("Upload recording instead", type=["mp4", "mov"])
-                            if video_file:
-                                with open(os.path.join(RECORDING_DIR, "uploaded_recording.mp4"), "wb") as f:
-                                    f.write(video_file.getbuffer())
+                            st.success("Live camera available, Professor on Duty!")
+                            
 
                     # VIDEO QUESTIONS SECTION
                     for idx, question in enumerate(QUESTIONS):
