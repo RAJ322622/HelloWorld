@@ -213,14 +213,11 @@ def remove_active_student(username):
         st.error(f"Error removing active student: {str(e)}")
 
 def get_live_students():
-    try:
-        if os.path.exists(ACTIVE_FILE):
-            with open(ACTIVE_FILE, "r") as f:
-                return json.load(f)
-        return []
-    except Exception as e:
-        st.error(f"Error getting live students: {str(e)}")
-        return []
+    """Returns list of active students from JSON file"""
+    if os.path.exists(ACTIVE_FILE):
+        with open(ACTIVE_FILE, "r") as f:
+            return json.load(f)
+    return []
 
 # Quiz questions
 QUESTIONS = [
