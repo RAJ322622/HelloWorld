@@ -19,7 +19,7 @@ import json
 from streamlit_autorefresh import st_autorefresh
 import shutil
 import tempfile
-from streamlit.runtime.scriptrunner import RerunData, RerunException
+from streamlit.runtime.scriptrunner import RerunData
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 # Constants
