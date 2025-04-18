@@ -307,14 +307,14 @@ if choice == "Register":
             otp = str(random.randint(100000, 999999))
             if send_email_otp(email, otp):
                 st.session_state['reg_otp'] = otp
-                st.session_state['reg_data'] = (username, password, role, email)
+                st.session_state['reg_data'] = (username, password,  email)
                 st.success("OTP sent to your email.")
     
     otp_entered = st.text_input("Enter OTP")
     if st.button("Verify and Register"):
         if otp_entered == st.session_state.get('reg_otp'):
             username, password, role, email = st.session_state['reg_data']
-            register_user(username, password, role, email)
+            register_user(username, password,  email)
             # Clear registration data
             del st.session_state['reg_otp']
             del st.session_state['reg_data']
