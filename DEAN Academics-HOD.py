@@ -835,13 +835,15 @@ elif choice == "Professor Monitoring Panel":
                 st.session_state.prof_verified = True
                 st.rerun()
             else:
-                st.error("Invalid secret key! Access denied.")
+                st.error("❌ Invalid secret key! Access denied.")
     else:
-        st_autorefresh(interval=10000, key="monitor_refresh")
-        st.header("\U0001F4E1 Live Monitoring Dashboard")
+        # Auto-refresh every 5 seconds
+        st_autorefresh(interval=5000, key="monitor_refresh")
+        
+        st.header("📡 Live Monitoring Dashboard")
         st.info("Monitoring students currently taking the quiz")
         
-        # Get active students from the JSON file
+        # Load active students from JSON
         try:
             if os.path.exists(ACTIVE_FILE):
                 with open(ACTIVE_FILE, "r") as f:
@@ -849,29 +851,30 @@ elif choice == "Professor Monitoring Panel":
             else:
                 active_students = []
         except Exception as e:
-            st.error(f"Error loading active students: {str(e)}")
+            st.error(f"Error loading active students: {e}")
             active_students = []
         
         if not active_students:
-            st.write("No active students at the moment.")
+            st.warning("🕒 No active students at the moment.")
         else:
-            st.write(f"Active students ({len(active_students)}):")
+            st.success(f"🟢 Active Students ({len(active_students)}):")
             for student in active_students:
-                st.write(f"- {student}")
-                
-            st.markdown("---")
-            st.markdown("### Recent Quiz Submissions")
-            if os.path.exists(PROF_CSV_FILE):
-                try:
-                    df = pd.read_csv(PROF_CSV_FILE)
-                    recent_submissions = df.sort_values("Timestamp", ascending=False).head(5)
-                    st.dataframe(recent_submissions)
-                except Exception as e:
-                    st.error(f"Error loading submissions: {str(e)}")
-            else:
-                st.warning("No quiz submissions yet.")
-
-        if st.button("Exit Monitoring Panel"):
+                st.write(f"👤 {student}")
+        
+        # Recent submissions (optional)
+        st.markdown("---")
+        st.markdown("### Recent Quiz Submissions")
+        if os.path.exists(PROF_CSV_FILE):
+            try:
+                df = pd.read_csv(PROF_CSV_FILE)
+                recent_submissions = df.sort_values("Timestamp", ascending=False).head(5)
+                st.dataframe(recent_submissions)
+            except Exception as e:
+                st.error(f"Error loading submissions: {e}")
+        else:
+            st.warning("No quiz submissions yet.")
+        
+        if st.button("🚪 Exit Monitoring Panel"):
             st.session_state.prof_verified = False
             st.rerun()
 
