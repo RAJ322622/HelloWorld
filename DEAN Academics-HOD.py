@@ -110,7 +110,10 @@ def register_user(username, password, role, email):
             
         # Insert new user
         cursor.execute(
-            "INSERT INTO users (username, password, role, email) VALUES (?, ?, ?, ?)",(username, hash_password(password), role, email)
+            "INSERT INTO users (username, password, role, email) VALUES (?, ?, ?, ?)", 
+            (username, hash_password(password), role, email)
+        )
+
         conn.commit()
         st.success("Registration successful! Please login."))
         return True
