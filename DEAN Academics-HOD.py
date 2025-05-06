@@ -262,13 +262,14 @@ def create_video(question_text, filename, audio_file):
 
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(temp_video_path, fourcc, 10, (width, height))
-
+            font_scale = 0.6  # Reduced font size
+            thickness = 1
             for _ in range(50):  # 5 seconds of video at 10fps
                 img_copy = img.copy()
-                text_size = cv2.getTextSize(question_text, font, 1, 2)[0]
+                text_size = cv2.getTextSize(question_text, font, font_scale, thickness)[0]
                 text_x = (width - text_size[0]) // 2
                 text_y = (height + text_size[1]) // 2
-                cv2.putText(img_copy, question_text, (text_x, text_y), font, 1, (0, 0, 255), 2, cv2.LINE_AA)
+                cv2.putText(img_copy, question_text, (text_x, text_y), font, font_scale, (0, 0, 255), 2, cv2.LINE_AA)
                 out.write(img_copy)
             out.release()
 
