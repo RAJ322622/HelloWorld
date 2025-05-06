@@ -345,26 +345,28 @@ class VideoProcessor(VideoProcessorBase):
             st.error(f"Camera error: {str(e)}")
             return frame
             
-    def _save_recording(self):
-        if not self.frames:
-            return
-            
+    def recv(self, frame):
         try:
-            height, width, _ = self.frames[0].shape
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            video_path = os.path.join(RECORDING_DIR, f"quiz_recording_{timestamp}.mp4")
-            
-            os.makedirs(RECORDING_DIR, exist_ok=True)
-            
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(video_path, fourcc, 10, (width, height))
-            
-            for frame in self.frames:
-                out.write(frame)
-            out.release()
-            
+            img = frame.to_ndarray(format="bgr24")
+            img = cv2.resize(img, (320, 240))  # Resize frame to smaller size
+    
+            # Record at reduced frame rate (every 3rd frame)
+            if self.recording and len(self.frames) % 3 == 0:
+                self.frames.append(img)
+    
+            # Auto-save every 20 seconds
+            current_time = time.time()
+            if current_time - self.last_save_time > 20 and self.frames:
+                self._save_recording()
+                self.last_save_time = current_time
+                self.frames = []  # Clear buffer after saving
+    
+            return av.VideoFrame.from_ndarray(img, format="bgr24")
+    
         except Exception as e:
-            st.error(f"Failed to save recording: {str(e)}")
+            st.error(f"Camera error: {str(e)}")
+            return frame
+
 
     def close(self):
         self._save_recording()
