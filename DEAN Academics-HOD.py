@@ -18,10 +18,6 @@ import random
 import json
 from streamlit_autorefresh import st_autorefresh
 import shutil
-import tempfile
-from streamlit.runtime.scriptrunner import RerunData
-from streamlit.runtime.scriptrunner import get_script_run_ctx
-from streamlit.runtime.scriptrunner import RerunException
 
 # Constants
 EMAIL_SENDER = "rajkumar.k0322@gmail.com"
@@ -62,6 +58,10 @@ if 'section' not in st.session_state:
     st.session_state.section = ""
 if 'prof_dir' not in st.session_state:
     st.session_state.prof_dir = "professor_data"
+if 'login_username' not in st.session_state:
+    st.session_state.login_username = ""
+if 'login_password' not in st.session_state:
+    st.session_state.login_password = ""
 
 def get_db_connection():
     try:
@@ -107,10 +107,8 @@ def init_db():
         if conn:
             conn.close()
 
-# Call this at the start of your application, right after imports
 init_db()
 
-# Password hashing
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
@@ -120,13 +118,11 @@ def register_user(username, password, role, email):
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Check if username already exists
         cursor.execute("SELECT username FROM users WHERE username = ?", (username,))
         if cursor.fetchone():
             st.error("Username already exists!")
             return False
             
-        # Insert new user
         cursor.execute(
             "INSERT INTO users (username, password, role, email) VALUES (?, ?, ?, ?)", 
             (username, hash_password(password), role, email)
@@ -189,7 +185,6 @@ def send_email_otp(to_email, otp):
         return False
 
 def add_active_student(username):
-    """Adds student to active list"""
     try:
         active = []
         if os.path.exists(ACTIVE_FILE):
@@ -204,7 +199,6 @@ def add_active_student(username):
         st.error(f"Error adding student: {str(e)}")
 
 def remove_active_student(username):
-    """Removes student from active list"""
     try:
         if os.path.exists(ACTIVE_FILE):
             with open(ACTIVE_FILE, "r") as f:
@@ -218,13 +212,11 @@ def remove_active_student(username):
         st.error(f"Error removing student: {str(e)}")
 
 def get_live_students():
-    """Returns list of active students from JSON file"""
     if os.path.exists(ACTIVE_FILE):
         with open(ACTIVE_FILE, "r") as f:
             return json.load(f)
     return []
 
-# Quiz questions
 QUESTIONS = [
     {"question": "🔤 Which data type is used to store a single character in C? 🎯", "options": ["char", "int", "float", "double"], "answer": "char"},
     {"question": "🔢 What is the output of 5 / 2 in C if both operands are integers? ⚡", "options": ["2.5", "2", "3", "Error"], "answer": "2"},
@@ -243,28 +235,24 @@ def create_video(question_text, filename, audio_file):
     try:
         video_path = os.path.join(VIDEO_DIR, filename)
         
-        # Create directory if it doesn't exist
         os.makedirs(VIDEO_DIR, exist_ok=True)
         
-        # Check if video already exists
         if os.path.exists(video_path):
             return video_path
 
-        # Create temporary directory for processing
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_video_path = os.path.join(temp_dir, "temp_video.mp4")
             temp_audio_path = os.path.join(temp_dir, "temp_audio.mp3")
             
-            # Step 1: Create silent video
             width, height = 640, 480
             img = np.full((height, width, 3), (255, 223, 186), dtype=np.uint8)
             font = cv2.FONT_HERSHEY_SIMPLEX
 
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(temp_video_path, fourcc, 10, (width, height))
-            font_scale = 0.6  # Reduced font size
+            font_scale = 0.6
             thickness = 1
-            for _ in range(50):  # 5 seconds of video at 10fps
+            for _ in range(50):
                 img_copy = img.copy()
                 text_size = cv2.getTextSize(question_text, font, font_scale, thickness)[0]
                 text_x = (width - text_size[0]) // 2
@@ -273,31 +261,26 @@ def create_video(question_text, filename, audio_file):
                 out.write(img_copy)
             out.release()
 
-            # Step 2: Copy audio to temp location
             shutil.copy(audio_file, temp_audio_path)
 
-            # Step 3: Combine video and audio
             try:
                 video_clip = mp.VideoFileClip(temp_video_path)
                 audio_clip = mp.AudioFileClip(temp_audio_path)
                 
-                # Ensure audio duration matches video
                 if audio_clip.duration > video_clip.duration:
                     audio_clip = audio_clip.subclip(0, video_clip.duration)
                 
                 final_video = video_clip.set_audio(audio_clip)
                 
-                # Write final video directly to target location
                 final_video.write_videofile(
                     video_path,
                     codec='libx264',
                     fps=10,
                     audio_codec='aac',
                     threads=4,
-                    logger=None  # Disable verbose output
+                    logger=None
                 )
                 
-                # Explicitly close clips to release resources
                 video_clip.close()
                 audio_clip.close()
                 final_video.close()
@@ -312,12 +295,6 @@ def create_video(question_text, filename, audio_file):
         st.error(f"Error creating video: {str(e)}")
         return None
 
-def rerun():
-    """Programmatically rerun the Streamlit app"""
-    ctx = get_script_run_ctx()
-    if ctx:
-        raise RerunException(RerunData())
-
 class VideoProcessor(VideoProcessorBase):
     def __init__(self):
         self.recording = True
@@ -328,38 +305,16 @@ class VideoProcessor(VideoProcessorBase):
     def recv(self, frame):
         try:
             img = frame.to_ndarray(format="bgr24")
-            
-            # Record at reduced frame rate (every 3rd frame)
+            img = cv2.resize(img, (320, 240))
+    
             if self.recording and len(self.frames) % 3 == 0:
                 self.frames.append(img)
-                
-            # Auto-save every 20 seconds
+    
             current_time = time.time()
             if current_time - self.last_save_time > 20 and self.frames:
                 self._save_recording()
                 self.last_save_time = current_time
-                self.frames = []  # Clear buffer after saving
-                
-            return av.VideoFrame.from_ndarray(img, format="bgr24")
-        except Exception as e:
-            st.error(f"Camera error: {str(e)}")
-            return frame
-            
-    def recv(self, frame):
-        try:
-            img = frame.to_ndarray(format="bgr24")
-            img = cv2.resize(img, (320, 240))  # Resize frame to smaller size
-    
-            # Record at reduced frame rate (every 3rd frame)
-            if self.recording and len(self.frames) % 3 == 0:
-                self.frames.append(img)
-    
-            # Auto-save every 20 seconds
-            current_time = time.time()
-            if current_time - self.last_save_time > 20 and self.frames:
-                self._save_recording()
-                self.last_save_time = current_time
-                self.frames = []  # Clear buffer after saving
+                self.frames = []
     
             return av.VideoFrame.from_ndarray(img, format="bgr24")
     
@@ -367,14 +322,31 @@ class VideoProcessor(VideoProcessorBase):
             st.error(f"Camera error: {str(e)}")
             return frame
 
+    def _save_recording(self):
+        try:
+            os.makedirs(RECORDING_DIR, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            video_path = os.path.join(RECORDING_DIR, f"recording_{timestamp}.mp4")
+            
+            if not self.frames:
+                return
+                
+            height, width, _ = self.frames[0].shape
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(video_path, fourcc, 10, (width, height))
+            
+            for frame in self.frames:
+                out.write(frame)
+            out.release()
+            
+        except Exception as e:
+            st.error(f"Error saving recording: {str(e)}")
 
     def close(self):
         self._save_recording()
 
 # Streamlit UI
 st.title("🎥 Interactive Video Quiz 🎬")
-
-# UI Starts
 st.title("\U0001F393 Secure Quiz App with Webcam \U0001F4F5")
 menu = ["Register", "Login", "Take Quiz", "Change Password", "Professor Panel", "Professor Monitoring Panel", "View Recordings"]
 choice = st.sidebar.selectbox("Menu", menu)
@@ -408,11 +380,6 @@ if choice == "Register":
 
 elif choice == "Login":
     st.subheader("Login")
-
-    if 'login_username' not in st.session_state:
-        st.session_state.login_username = ""
-    if 'login_password' not in st.session_state:
-        st.session_state.login_password = ""
 
     username = st.text_input("Username", value=st.session_state.login_username, key="login_username_widget")
     password = st.text_input("Password", type="password", value=st.session_state.login_password, key="login_password_widget")
@@ -485,7 +452,7 @@ elif choice == "Login":
                                 if key in st.session_state:
                                     del st.session_state[key]
                             
-                            st.rerun()
+                            st.experimental_rerun()
                         else:
                             st.error("Password update failed. Please try again.")
                     except Exception as e:
@@ -507,7 +474,7 @@ elif choice == "Take Quiz":
         st.session_state.usn = usn.strip().upper()
         st.session_state.section = section.strip().upper()
         if "quiz_active" not in st.session_state:
-            add_active_student(st.session_state.username)  # <-- ADD THIS LINE
+            add_active_student(st.session_state.username)
             st.session_state.quiz_active = True
         if usn and section:
             conn = None
@@ -536,7 +503,6 @@ elif choice == "Take Quiz":
                         mins, secs = divmod(time_left, 60)
                         st.info(f"⏳ Time left: {mins:02d}:{secs:02d}")
 
-                    # Take verification photo
                     st.markdown("### Verification Photo")
                     img_file_buffer = st.camera_input("Take a verification photo")
                     
@@ -588,7 +554,6 @@ elif choice == "Take Quiz":
                             st.error("Please answer all questions before submitting the quiz.")
                         else:
                             try:
-                                # Calculate score
                                 score = 0
                                 for q in QUESTIONS:
                                     if answers.get(q["question"]) == q["answer"]:
@@ -596,13 +561,11 @@ elif choice == "Take Quiz":
                                 
                                 time_taken = round(time.time() - st.session_state.quiz_start_time, 2)
                     
-                                # Save results
                                 new_row = pd.DataFrame([[username, hash_password(username), st.session_state.usn, 
                                                        st.session_state.section, score, time_taken, datetime.now()]],
                                                      columns=["Username", "Hashed_Password", "USN", "Section", 
                                                              "Score", "Time_Taken", "Timestamp"])
                     
-                                # Save to professor CSV
                                 if os.path.exists(PROF_CSV_FILE):
                                     prof_df = pd.read_csv(PROF_CSV_FILE)
                                     prof_df = pd.concat([prof_df, new_row], ignore_index=True)
@@ -610,7 +573,6 @@ elif choice == "Take Quiz":
                                     prof_df = new_row
                                 prof_df.to_csv(PROF_CSV_FILE, index=False)
                     
-                                # Save to section CSV
                                 section_file = f"{st.session_state.section}_results.csv"
                                 if os.path.exists(section_file):
                                     sec_df = pd.read_csv(section_file)
@@ -619,14 +581,12 @@ elif choice == "Take Quiz":
                                     sec_df = new_row
                                 sec_df.to_csv(section_file, index=False)
                     
-                                # Update attempts
                                 if record:
                                     cur.execute("UPDATE quiz_attempts SET attempt_count = attempt_count + 1 WHERE username = ?", (username,))
                                 else:
                                     cur.execute("INSERT INTO quiz_attempts (username, attempt_count) VALUES (?, ?)", (username, 1))
                                 conn.commit()
                     
-                                # Send email confirmation
                                 email_result = conn.execute("SELECT email FROM users WHERE username = ?", (username,)).fetchone()
                                 if email_result:
                                     try:
@@ -653,7 +613,7 @@ Thank you for participating.""")
                                 st.success(f"Quiz submitted successfully! Your score is {score}/{len(QUESTIONS)}")
                                 st.success("Quiz submitted successfully! check Your Mail")
                                 st.balloons()
-                                st.rerun()
+                                st.experimental_rerun()
                                 
                             except Exception as e:
                                 st.error(f"Error saving results: {str(e)}")
@@ -702,7 +662,7 @@ elif choice == "Professor Panel":
         if st.button("Verify Key"):
             if secret_key == PROFESSOR_SECRET_KEY:
                 st.session_state.prof_secret_verified = True
-                st.rerun()
+                st.experimental_rerun()
             else:
                 st.error("Invalid secret key! Access denied.")
     else:
@@ -726,7 +686,7 @@ elif choice == "Professor Panel":
                         st.session_state.role = "professor"
                         st.success(f"Welcome Professor {prof_id}!")
                         os.makedirs(st.session_state.prof_dir, exist_ok=True)
-                        st.rerun()
+                        st.experimental_rerun()
                     else:
                         st.error("Invalid Professor credentials")
             else:
@@ -777,7 +737,7 @@ elif choice == "Professor Panel":
                     st.session_state.prof_logged_in = False
                     st.session_state.username = ""
                     st.session_state.role = ""
-                    st.rerun()
+                    st.experimental_rerun()
         
         with tab2:
             st.subheader("Professor Registration")
@@ -839,16 +799,13 @@ elif choice == "Professor Monitoring Panel":
         secret_key = st.text_input("Enter Professor Secret Key", type="password")
         if st.button("Verify") and secret_key == PROFESSOR_SECRET_KEY:
             st.session_state.prof_verified = True
-            st.rerun()
+            st.experimental_rerun()
     else:
-        st_autorefresh(interval=3000, key="monitor_refresh")  # Refresh every 3 sec
+        st_autorefresh(interval=3000, key="monitor_refresh")
         
         st.header("👥 Active Quiz Takers")
         try:
-            active_students = []
-            if os.path.exists(ACTIVE_FILE):
-                with open(ACTIVE_FILE, "r") as f:
-                    active_students = json.load(f)
+            active_students = get_live_students()
             
             if not active_students:
                 st.warning("No students currently taking the quiz")
@@ -858,6 +815,7 @@ elif choice == "Professor Monitoring Panel":
         
         except Exception as e:
             st.error(f"Monitoring error: {str(e)}")
+
 elif choice == "View Recordings":
     if not st.session_state.get('recordings_verified', False):
         secret_key = st.text_input("Enter Professor Secret Key to view recordings", type="password")
@@ -865,7 +823,7 @@ elif choice == "View Recordings":
         if st.button("Verify Key"):
             if secret_key == PROFESSOR_SECRET_KEY:
                 st.session_state.recordings_verified = True
-                st.rerun()
+                st.experimental_rerun()
             else:
                 st.error("Invalid secret key! Access denied.")
     else:
@@ -887,7 +845,7 @@ elif choice == "View Recordings":
                         try:
                             os.remove(video_path)
                             st.success("Video deleted successfully!")
-                            st.rerun()
+                            st.experimental_rerun()
                         except Exception as e:
                             st.error(f"Error deleting video: {str(e)}")
                 else:
@@ -922,7 +880,7 @@ elif choice == "View Recordings":
                         try:
                             os.remove(photo_path)
                             st.success("Photo deleted successfully!")
-                            st.rerun()
+                            st.experimental_rerun()
                         except Exception as e:
                             st.error(f"Error deleting photo: {str(e)}")
                 else:
@@ -932,4 +890,4 @@ elif choice == "View Recordings":
 
         if st.button("Exit Recordings Panel"):
             st.session_state.recordings_verified = False
-            st.rerun()
+            st.experimental_rerun()
