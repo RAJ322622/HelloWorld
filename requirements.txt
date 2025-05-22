@@ -7,4 +7,4 @@ opencv-python-headless==4.9.0.80
 pandas==2.2.1
 sqlalchemy==2.0.25
 streamlit-autorefresh==1.0.1
-PyAV==9.2.0
+pyav==9.2.0
