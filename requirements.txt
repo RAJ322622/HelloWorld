@@ -1,22 +1,23 @@
 # Core
 streamlit==1.36.0
 
-# WebRTC with explicit no-av option
-streamlit-webrtc==0.47.1 ; python_version >= '3.7'
+# WebRTC
+streamlit-webrtc==0.47.1
 
-# Video processing alternatives
+# Video/Image Processing
 opencv-python-headless==4.9.0.80
 imageio==2.34.0
-imageio-ffmpeg==0.4.9  # FFmpeg support without PyAV
+imageio-ffmpeg==0.4.9
+moviepy==1.0.3
 
-# Audio processing
+# Audio Processing
 pydub==0.25.1
 soundfile==0.12.1
 gTTS==2.4.0
 
-# Data processing
+# Data Processing
 pandas==2.2.2
 numpy==2.0.0
 
-# Video editing (configure to not use PyAV)
-moviepy==1.0.3 --no-deps
+# Utilities
+python-dotenv==1.0.0
