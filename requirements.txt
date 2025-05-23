@@ -8,8 +8,9 @@ pandas==2.2.1
 sqlalchemy==2.0.25
 streamlit-autorefresh==1.0.1
 Pillow==10.1.0
-av==9.2.0  # Downgraded version with pre-built wheels
+av==10.0.0  # Updated to newer version that works with Python 3.13
 email-validator==2.0.0.post2
 pydub==0.25.1
 imageio==2.34.0
 imageio-ffmpeg==0.4.9
+pkgconfig==1.5.5  # Explicitly include pkgconfig
