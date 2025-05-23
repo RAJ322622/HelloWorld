@@ -1,21 +1,7 @@
-# Core
 streamlit==1.36.0
-
-# WebRTC alternative (since av is problematic)
 streamlit-webrtc==0.47.1
-
-# Image processing (use opencv instead of Pillow)
-opencv-python==4.9.0.80
-imageio==2.34.0
-
-# Audio processing alternatives
-pydub==0.25.1
-soundfile==0.12.1
-
-# Data processing
-pandas==2.2.2
-numpy==2.0.0
-
-# Remove problematic packages
-av==10.0.0  # Comment out or remove
-Pillow==10.3.0  # Comment out or remove
+opencv-python==4.9.0.80  # Use this instead of opencv-python-headless
+numpy==1.26.4  # Required for OpenCV
+pandas==2.1.4
+Pillow==10.1.0  # For image processing
+imageio==2.34.0  # For video/audio handling
