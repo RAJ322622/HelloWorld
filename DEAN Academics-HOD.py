@@ -18,7 +18,10 @@ import random
 import json
 from streamlit_autorefresh import st_autorefresh
 import shutil
-from PIL import Image, ImageDraw, ImageFont
+import tempfile
+from streamlit.runtime.scriptrunner import RerunData
+from streamlit.runtime.scriptrunner import get_script_run_ctx
+from streamlit.runtime.scriptrunner import RerunException
 
 # Constants
 EMAIL_SENDER = "rajkumar.k0322@gmail.com"
@@ -228,54 +231,6 @@ QUESTIONS = [
     {"question": "🔁 Which loop is used when the number of iterations is known? 🔄", "options": ["while", "do-while", "for", "if"], "answer": "for"},
     {"question": "📌 What is the format specifier for printing an integer in C? 🖨️", "options": ["%c", "%d", "%f", "%s"], "answer": "%d"}]
 
-def create_question_image(question_text, filename):
-    """Create an image with the question text"""
-    try:
-        os.makedirs(VIDEO_DIR, exist_ok=True)
-        image_path = os.path.join(VIDEO_DIR, filename)
-        
-        if os.path.exists(image_path):
-            return image_path
-            
-        # Create image with question text using PIL
-        width, height = 800, 200
-        img = Image.new('RGB', (width, height), color=(255, 223, 186))
-        draw = ImageDraw.Draw(img)
-        
-        try:
-            font = ImageFont.truetype("arial.ttf", 16)
-        except:
-            font = ImageFont.load_default()
-        
-        # Split question into multiple lines
-        lines = []
-        words = question_text.split()
-        current_line = words[0]
-        
-        for word in words[1:]:
-            test_line = current_line + " " + word
-            text_width = draw.textlength(test_line, font=font)
-            if text_width <= width - 40:
-                current_line = test_line
-            else:
-                lines.append(current_line)
-                current_line = word
-        lines.append(current_line)
-        
-        # Draw each line of text
-        y_pos = 20
-        for line in lines:
-            text_width = draw.textlength(line, font=font)
-            text_x = (width - text_width) // 2
-            draw.text((text_x, y_pos), line, fill=(0, 0, 0), font=font)
-            y_pos += 30
-        
-        img.save(image_path)
-        return image_path
-    except Exception as e:
-        st.error(f"Error creating question image: {str(e)}")
-        return None
-
 def generate_audio(question_text, filename):
     try:
         if not os.path.exists(filename):
@@ -287,29 +242,80 @@ def generate_audio(question_text, filename):
 def create_video(question_text, filename, audio_file):
     try:
         video_path = os.path.join(VIDEO_DIR, filename)
+        
+        # Create directory if it doesn't exist
         os.makedirs(VIDEO_DIR, exist_ok=True)
         
+        # Check if video already exists
         if os.path.exists(video_path):
             return video_path
 
-        # Create text clip with moviepy
-        txt_clip = mp.TextClip(question_text, fontsize=24, color='black', bg_color='#FFDFBA')
-        txt_clip = txt_clip.set_position('center').set_duration(5)  # 5 second duration
-        
-        # Add audio if available
-        if os.path.exists(audio_file):
-            audio_clip = mp.AudioFileClip(audio_file)
-            if audio_clip.duration > 5:
-                audio_clip = audio_clip.subclip(0, 5)
-            txt_clip = txt_clip.set_audio(audio_clip)
-        
-        # Write video file
-        txt_clip.write_videofile(video_path, fps=24, codec='libx264', audio_codec='aac')
-        return video_path
-        
+        # Create temporary directory for processing
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_video_path = os.path.join(temp_dir, "temp_video.mp4")
+            temp_audio_path = os.path.join(temp_dir, "temp_audio.mp3")
+            
+            # Step 1: Create silent video
+            width, height = 640, 480
+            img = np.full((height, width, 3), (255, 223, 186), dtype=np.uint8)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(temp_video_path, fourcc, 10, (width, height))
+
+            for _ in range(50):  # 5 seconds of video at 10fps
+                img_copy = img.copy()
+                text_size = cv2.getTextSize(question_text, font, 1, 2)[0]
+                text_x = (width - text_size[0]) // 2
+                text_y = (height + text_size[1]) // 2
+                cv2.putText(img_copy, question_text, (text_x, text_y), font, 1, (0, 0, 255), 2, cv2.LINE_AA)
+                out.write(img_copy)
+            out.release()
+
+            # Step 2: Copy audio to temp location
+            shutil.copy(audio_file, temp_audio_path)
+
+            # Step 3: Combine video and audio
+            try:
+                video_clip = mp.VideoFileClip(temp_video_path)
+                audio_clip = mp.AudioFileClip(temp_audio_path)
+                
+                # Ensure audio duration matches video
+                if audio_clip.duration > video_clip.duration:
+                    audio_clip = audio_clip.subclip(0, video_clip.duration)
+                
+                final_video = video_clip.set_audio(audio_clip)
+                
+                # Write final video directly to target location
+                final_video.write_videofile(
+                    video_path,
+                    codec='libx264',
+                    fps=10,
+                    audio_codec='aac',
+                    threads=4,
+                    logger=None  # Disable verbose output
+                )
+                
+                # Explicitly close clips to release resources
+                video_clip.close()
+                audio_clip.close()
+                final_video.close()
+                
+                return video_path
+                
+            except Exception as e:
+                st.error(f"Error combining video and audio: {str(e)}")
+                return None
+                
     except Exception as e:
         st.error(f"Error creating video: {str(e)}")
         return None
+
+def rerun():
+    """Programmatically rerun the Streamlit app"""
+    ctx = get_script_run_ctx()
+    if ctx:
+        raise RerunException(RerunData())
 
 class VideoProcessor(VideoProcessorBase):
     def __init__(self):
@@ -322,14 +328,16 @@ class VideoProcessor(VideoProcessorBase):
         try:
             img = frame.to_ndarray(format="bgr24")
             
+            # Record at reduced frame rate (every 3rd frame)
             if self.recording and len(self.frames) % 3 == 0:
                 self.frames.append(img)
                 
+            # Auto-save every 20 seconds
             current_time = time.time()
             if current_time - self.last_save_time > 20 and self.frames:
                 self._save_recording()
                 self.last_save_time = current_time
-                self.frames = []
+                self.frames = []  # Clear buffer after saving
                 
             return av.VideoFrame.from_ndarray(img, format="bgr24")
         except Exception as e:
@@ -341,13 +349,18 @@ class VideoProcessor(VideoProcessorBase):
             return
             
         try:
+            height, width, _ = self.frames[0].shape
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             video_path = os.path.join(RECORDING_DIR, f"quiz_recording_{timestamp}.mp4")
+            
             os.makedirs(RECORDING_DIR, exist_ok=True)
             
-            # Save frames as video using moviepy
-            clip = mp.ImageSequenceClip(self.frames, fps=10)
-            clip.write_videofile(video_path, codec='libx264', fps=10)
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(video_path, fourcc, 10, (width, height))
+            
+            for frame in self.frames:
+                out.write(frame)
+            out.release()
             
         except Exception as e:
             st.error(f"Failed to save recording: {str(e)}")
@@ -491,7 +504,7 @@ elif choice == "Take Quiz":
         st.session_state.usn = usn.strip().upper()
         st.session_state.section = section.strip().upper()
         if "quiz_active" not in st.session_state:
-            add_active_student(st.session_state.username)
+            add_active_student(st.session_state.username)  # <-- ADD THIS LINE
             st.session_state.quiz_active = True
         if usn and section:
             conn = None
