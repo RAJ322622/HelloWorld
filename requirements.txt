@@ -1,9 +1,11 @@
-streamlit==1.33.0
-numpy==1.26.4
-pandas==2.2.1
-opencv-python==4.9.0.80
-moviepy==1.0.3
-gTTS==2.4.0
-streamlit-webrtc==0.47.1
-Pillow==10.2.0
-email-validator==2.1.1
+streamlit
+streamlit-webrtc
+streamlit_autorefresh
+gTTS
+opencv-python 
+av
+numpy
+pandas
+moviepy
+ffmpeg
+cache clear
