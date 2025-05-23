@@ -1,21 +1,22 @@
 # Core
 streamlit==1.36.0
 
-# WebRTC alternative (since av is problematic)
-streamlit-webrtc==0.47.1
+# WebRTC with explicit no-av option
+streamlit-webrtc==0.47.1 ; python_version >= '3.7'
 
-# Image processing (use opencv instead of Pillow)
+# Video processing alternatives
 opencv-python-headless==4.9.0.80
 imageio==2.34.0
+imageio-ffmpeg==0.4.9  # FFmpeg support without PyAV
 
-# Audio processing alternatives
+# Audio processing
 pydub==0.25.1
 soundfile==0.12.1
+gTTS==2.4.0
 
 # Data processing
 pandas==2.2.2
 numpy==2.0.0
 
-# Remove problematic packages
-av==10.0.0  # Comment out or remove
-Pillow==10.3.0  # Comment out or remove
+# Video editing (configure to not use PyAV)
+moviepy==1.0.3 --no-deps
