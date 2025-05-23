@@ -17,5 +17,5 @@ pandas==2.2.2
 numpy==2.0.0
 
 # Remove problematic packages
-# av==10.0.0  # Comment out or remove
-# Pillow==10.3.0  # Comment out or remove
+av==10.0.0  # Comment out or remove
+Pillow==10.3.0  # Comment out or remove
