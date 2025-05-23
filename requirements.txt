@@ -1,24 +1,21 @@
-# Core requirements
+# Core
 streamlit==1.36.0
+
+# WebRTC alternative (since av is problematic)
 streamlit-webrtc==0.47.1
 
-# AV alternatives (try these if av fails)
+# Image processing (use opencv instead of Pillow)
 opencv-python-headless==4.9.0.80
 imageio==2.34.0
-av==10.0.0
 
-
-# Audio/Video processing
-moviepy==1.0.3
-gTTS==2.5.1
+# Audio processing alternatives
 pydub==0.25.1
+soundfile==0.12.1
 
 # Data processing
 pandas==2.2.2
 numpy==2.0.0
 
-# Image processing
-Pillow==10.4.0  # Newer version with Python 3.13 support
-
-# System dependencies (via pip)
-pkgconfig==1.5.5
+# Remove problematic packages
+# av==10.0.0  # Comment out or remove
+# Pillow==10.3.0  # Comment out or remove
