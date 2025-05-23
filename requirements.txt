@@ -1,10 +1,11 @@
-streamlit==1.36.0
+streamlit==1.32.0
+sqlite3==2.6.0
+hashlib==20081119
+numpy==1.26.0
+pandas==2.1.1
+opencv-python==4.8.1.78
+moviepy==1.0.3
+gTTS==2.4.0
 streamlit-webrtc==0.47.1
-opencv-python==4.9.0.80  # Regular version instead of headless
-numpy==1.26.4  # Compatible with OpenCV
-pandas==2.1.4
-Pillow==10.1.0
-imageio==2.34.0
-pydub==0.25.1
-python-dotenv==1.0.0
-av==9.2.0  # Older stable version
+Pillow==10.0.1
+email-validator==2.0.0.post2
