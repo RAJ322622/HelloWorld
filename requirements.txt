@@ -2,11 +2,16 @@
 streamlit==1.33.0
 streamlit-webrtc==0.47.0
 streamlit_autorefresh==0.4.1
-moviepy
+
+# Multimedia processing
 opencv-python-headless
+moviepy
 gtts
-streamlit-webrtc
 av
+imageio
+imageio-ffmpeg
+
+# Data processing
 numpy
 pandas
 python-dotenv
