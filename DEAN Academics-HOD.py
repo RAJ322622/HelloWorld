@@ -1,3 +1,16 @@
+# Add this after imports but before other code
+try:
+    import av
+    import cv2
+    from streamlit_webrtc import webrtc_streamer
+except ImportError:
+    import subprocess
+    import sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", 
+                         "opencv-python", "av", "streamlit-webrtc"])
+    import av
+    import cv2
+    from streamlit_webrtc import webrtc_streamer
 import streamlit as st
 import sqlite3
 import hashlib
@@ -5,12 +18,10 @@ import time
 import pandas as pd
 import os
 import tempfile 
-import cv2
 import numpy as np
 import moviepy.editor as mp
 from gtts import gTTS
 from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoProcessorBase
-import av
 from datetime import datetime
 import smtplib
 from email.message import EmailMessage
@@ -184,8 +195,11 @@ def send_email_otp(to_email, otp):
             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
             server.send_message(msg)
         return True
+    except smtplib.SMTPAuthenticationError:
+        st.error("Email authentication failed. Please check sender credentials.")
+        return False
     except Exception as e:
-        st.error(f"Failed to send OTP: {e}")
+        st.error(f"Failed to send OTP: {str(e)}")
         return False
 
 def add_active_student(username):
@@ -243,72 +257,23 @@ def create_video(question_text, filename, audio_file):
     try:
         video_path = os.path.join(VIDEO_DIR, filename)
         
-        # Create directory if it doesn't exist
-        os.makedirs(VIDEO_DIR, exist_ok=True)
-        
-        # Check if video already exists
         if os.path.exists(video_path):
             return video_path
 
-        # Create temporary directory for processing
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_video_path = os.path.join(temp_dir, "temp_video.mp4")
-            temp_audio_path = os.path.join(temp_dir, "temp_audio.mp3")
-            
-            # Step 1: Create silent video
-            width, height = 640, 480
-            img = np.full((height, width, 3), (255, 223, 186), dtype=np.uint8)
-            font = cv2.FONT_HERSHEY_SIMPLEX
-
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(temp_video_path, fourcc, 10, (width, height))
-
-            for _ in range(50):  # 5 seconds of video at 10fps
-                img_copy = img.copy()
-                text_size = cv2.getTextSize(question_text, font, 1, 2)[0]
-                text_x = (width - text_size[0]) // 2
-                text_y = (height + text_size[1]) // 2
-                cv2.putText(img_copy, question_text, (text_x, text_y), font, 1, (0, 0, 255), 2, cv2.LINE_AA)
-                out.write(img_copy)
-            out.release()
-
-            # Step 2: Copy audio to temp location
-            shutil.copy(audio_file, temp_audio_path)
-
-            # Step 3: Combine video and audio
-            try:
-                video_clip = mp.VideoFileClip(temp_video_path)
-                audio_clip = mp.AudioFileClip(temp_audio_path)
-                
-                # Ensure audio duration matches video
-                if audio_clip.duration > video_clip.duration:
-                    audio_clip = audio_clip.subclip(0, video_clip.duration)
-                
-                final_video = video_clip.set_audio(audio_clip)
-                
-                # Write final video directly to target location
-                final_video.write_videofile(
-                    video_path,
-                    codec='libx264',
-                    fps=10,
-                    audio_codec='aac',
-                    threads=4,
-                    logger=None  # Disable verbose output
-                )
-                
-                # Explicitly close clips to release resources
-                video_clip.close()
-                audio_clip.close()
-                final_video.close()
-                
-                return video_path
-                
-            except Exception as e:
-                st.error(f"Error combining video and audio: {str(e)}")
-                return None
-                
+        # Fallback to simple image if video creation fails
+        img = np.full((480, 640, 3), (255, 223, 186), dtype=np.uint8)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        text_size = cv2.getTextSize(question_text, font, 0.7, 2)[0]
+        text_x = (640 - text_size[0]) // 2
+        text_y = (480 + text_size[1]) // 2
+        cv2.putText(img, question_text, (text_x, text_y), font, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+        
+        image_path = os.path.join(VIDEO_DIR, f"{filename.split('.')[0]}.jpg")
+        cv2.imwrite(image_path, img)
+        return image_path
+        
     except Exception as e:
-        st.error(f"Error creating video: {str(e)}")
+        st.error(f"Video creation failed, using fallback image: {str(e)}")
         return None
 
 def rerun():
@@ -550,29 +515,20 @@ elif choice == "Take Quiz":
                             st.error(f"Failed to save photo: {str(e)}")
 
                     answers = {}
+                    # In the Take Quiz section, modify the question display:
                     for idx, question in enumerate(QUESTIONS):
                         question_text = question["question"]
-    
-                        audio_file = os.path.join(VIDEO_DIR, f"question_{idx}.mp3")
-                        if not os.path.exists(audio_file):
-                            try:
-                                tts = gTTS(text=question_text, lang='en', slow=False)
-                                tts.save(audio_file)
-                            except Exception as e:
-                                st.error(f"Error generating audio: {str(e)}")
-                                st.markdown(f"**Q{idx+1}:** {question_text}")
-                                ans = st.radio("Select your answer:", question['options'], key=f"q{idx}", index=None)
-                                continue
                         
-                        video_file = os.path.join(VIDEO_DIR, f"question_{idx}.mp4")
-                        final_video_path = create_video(question_text, f"question_{idx}_final.mp4", audio_file)
+                        # Try to create video/image
+                        media_file = os.path.join(VIDEO_DIR, f"question_{idx}.jpg")  # Default to image
+                        if not os.path.exists(media_file):
+                            media_file = create_video(question_text, f"question_{idx}.jpg", None)
                         
-                        if final_video_path and os.path.exists(final_video_path):
-                            try:
-                                st.video(final_video_path)
-                            except Exception as e:
-                                st.error(f"Error displaying video: {str(e)}")
-                                st.markdown(f"**Q{idx+1}:** {question_text}")
+                        if media_file and os.path.exists(media_file):
+                            if media_file.endswith('.mp4'):
+                                st.video(media_file)
+                            else:
+                                st.image(media_file, use_column_width=True)
                         else:
                             st.markdown(f"**Q{idx+1}:** {question_text}")
                         
