@@ -1,8 +1,10 @@
 streamlit==1.36.0
 streamlit-webrtc==0.47.1
-opencv-python-headless==4.9.0.80
+opencv-python==4.9.0.80  # Regular version instead of headless
+numpy==1.26.4  # Compatible with OpenCV
+pandas==2.1.4
+Pillow==10.1.0
 imageio==2.34.0
 pydub==0.25.1
-pandas==2.2.2
-numpy==2.0.0
 python-dotenv==1.0.0
+av==9.2.0  # Older stable version
