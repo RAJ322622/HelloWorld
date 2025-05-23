@@ -1,7 +1,7 @@
 # Core dependencies
 streamlit==1.33.0
 streamlit-webrtc==0.47.0
-streamlit_autorefresh==0.4.1
+streamlit-autorefresh==1.0.1
 
 # Multimedia processing
 opencv-python-headless
