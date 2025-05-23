@@ -501,7 +501,7 @@ elif choice == "Take Quiz":
                     answers = {}
                     for idx, question in enumerate(QUESTIONS):
                         question_text = question["question"]
-    
+                        
                         audio_file = os.path.join(VIDEO_DIR, f"question_{idx}.mp3")
                         if not os.path.exists(audio_file):
                             try:
@@ -509,19 +509,19 @@ elif choice == "Take Quiz":
                                 tts.save(audio_file)
                             except Exception as e:
                                 st.error(f"Error generating audio: {str(e)}")
-                                st.markdown(f"**Q{idx+1}:** {question_text}")
-                                ans = st.radio("Select your answer:", question['options'], key=f"q{idx}", index=None)
-                                continue
                         
-                        video_file = os.path.join(VIDEO_DIR, f"question_{idx}.mp4")
-                        final_video_path = create_video(question_text, f"question_{idx}_final.mp4", audio_file)
+                        # Create image frame
+                        img = np.zeros((300, 600, 3), dtype=np.uint8)
+                        cv2.putText(img, f"Question {idx+1}", (50, 50), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,255,255), 2)
+                        cv2.putText(img, question_text, (50, 120), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 1, cv2.LINE_AA)
                         
-                        if final_video_path and os.path.exists(final_video_path):
-                            try:
-                                st.video(final_video_path)
-                            except Exception as e:
-                                st.error(f"Error displaying video: {str(e)}")
-                                st.markdown(f"**Q{idx+1}:** {question_text}")
+                        # Display image and audio
+                        st.image(img, channels="BGR")
+                        
+                        if os.path.exists(audio_file):
+                            st.audio(audio_file)
                         else:
                             st.markdown(f"**Q{idx+1}:** {question_text}")
                         
