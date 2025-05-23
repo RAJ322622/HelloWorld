@@ -1,13 +1,13 @@
-# Core dependencies (pinned for stability)
+# Core dependencies
 streamlit==1.33.0
 streamlit-webrtc==0.47.0
 streamlit_autorefresh==0.4.1
 gTTS==2.4.0
-opencv-python-headless==4.9.0.80  # Use headless to avoid libGL.so.1 issues
-av==12.0.0  # Critical for video processing (pinned)
-moviepy==1.0.3  # Requires ffmpeg internally
+opencv-python-headless==4.9.0.80  # Headless version to avoid libGL error
+av==12.0.0
+moviepy==1.0.3
 
 # Flexible dependencies (no version specified)
 numpy
 pandas
-python-dotenv  # Often needed with Streamlit
+python-dotenv
