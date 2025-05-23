@@ -18,10 +18,7 @@ import random
 import json
 from streamlit_autorefresh import st_autorefresh
 import shutil
-import tempfile
-from streamlit.runtime.scriptrunner import RerunData
-from streamlit.runtime.scriptrunner import get_script_run_ctx
-from streamlit.runtime.scriptrunner import RerunException
+from PIL import Image, ImageDraw, ImageFont
 
 # Constants
 EMAIL_SENDER = "rajkumar.k0322@gmail.com"
@@ -231,9 +228,6 @@ QUESTIONS = [
     {"question": "🔁 Which loop is used when the number of iterations is known? 🔄", "options": ["while", "do-while", "for", "if"], "answer": "for"},
     {"question": "📌 What is the format specifier for printing an integer in C? 🖨️", "options": ["%c", "%d", "%f", "%s"], "answer": "%d"}]
 
-# Replace cv2-based image generation with PIL
-from PIL import Image, ImageDraw, ImageFont
-
 def create_question_image(question_text, filename):
     """Create an image with the question text"""
     try:
@@ -281,6 +275,7 @@ def create_question_image(question_text, filename):
     except Exception as e:
         st.error(f"Error creating question image: {str(e)}")
         return None
+
 def generate_audio(question_text, filename):
     try:
         if not os.path.exists(filename):
@@ -315,12 +310,6 @@ def create_video(question_text, filename, audio_file):
     except Exception as e:
         st.error(f"Error creating video: {str(e)}")
         return None
-
-def rerun():
-    """Programmatically rerun the Streamlit app"""
-    ctx = get_script_run_ctx()
-    if ctx:
-        raise RerunException(RerunData())
 
 class VideoProcessor(VideoProcessorBase):
     def __init__(self):
@@ -502,7 +491,7 @@ elif choice == "Take Quiz":
         st.session_state.usn = usn.strip().upper()
         st.session_state.section = section.strip().upper()
         if "quiz_active" not in st.session_state:
-            add_active_student(st.session_state.username)  # <-- ADD THIS LINE
+            add_active_student(st.session_state.username)
             st.session_state.quiz_active = True
         if usn and section:
             conn = None
