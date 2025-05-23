@@ -5,7 +5,8 @@ streamlit-autorefresh==1.0.1
 
 # Multimedia processing
 opencv-python-headless
-moviepy
+moviepy==1.0.3
+
 gtts
 av
 imageio
