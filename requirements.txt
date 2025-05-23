@@ -1,23 +1,9 @@
-# Core
-streamlit==1.36.0
-
-# WebRTC
-streamlit-webrtc==0.47.1
-
-# Video/Image Processing
-opencv-python-headless==4.9.0.80
-imageio==2.34.0
-imageio-ffmpeg==0.4.9
-moviepy==1.0.3
-
-# Audio Processing
-pydub==0.25.1
-soundfile==0.12.1
+streamlit==1.32.0
+streamlit-webrtc==0.47.0
 gTTS==2.4.0
-
-# Data Processing
-pandas==2.2.2
-numpy==2.0.0
-
-# Utilities
-python-dotenv==1.0.0
+moviepy==1.0.3
+numpy==1.26.4
+opencv-python-headless==4.9.0.80
+pandas==2.2.1
+sqlalchemy==2.0.25
+streamlit-autorefresh==1.0.1
