@@ -24,8 +24,8 @@ from streamlit.runtime.scriptrunner import get_script_run_ctx
 from streamlit.runtime.scriptrunner import RerunException
 
 # Constants
-EMAIL_SENDER = "rajkumar.k0322@gmail.com"
-EMAIL_PASSWORD = "kcxf lzrq xnts xlng"  # App Password
+EMAIL_SENDER = ""
+EMAIL_PASSWORD = ""  # App Password
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 PROFESSOR_SECRET_KEY = "RRCE@123"
